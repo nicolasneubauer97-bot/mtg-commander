@@ -13,8 +13,8 @@ interface GameDao {
     @Query("SELECT * FROM games WHERE id = :id")
     suspend fun getGameById(id: Long): GameEntity?
 
-    @Query("SELECT * FROM games WHERE status = 'IN_PROGRESS' ORDER BY startedAt DESC LIMIT 1")
-    suspend fun getLatestActiveGame(): GameEntity?
+    @Query("SELECT * FROM games WHERE status = :status ORDER BY startedAt DESC LIMIT 1")
+    suspend fun getLatestActiveGame(status: GameStatus): GameEntity?
 
     @Insert
     suspend fun insertGame(game: GameEntity): Long
@@ -25,9 +25,9 @@ interface GameDao {
     @Delete
     suspend fun deleteGame(game: GameEntity)
 
-    @Query("SELECT * FROM games WHERE status = 'FINISHED' ORDER BY startedAt DESC")
-    fun getFinishedGames(): Flow<List<GameEntity>>
+    @Query("SELECT * FROM games WHERE status = :status ORDER BY startedAt DESC")
+    fun getGamesByStatus(status: GameStatus): Flow<List<GameEntity>>
 
-    @Query("SELECT * FROM games WHERE status = 'IN_PROGRESS' ORDER BY startedAt DESC")
-    fun getActiveGames(): Flow<List<GameEntity>>
+    @Query("SELECT * FROM games WHERE id = :id")
+    fun observeGameById(id: Long): Flow<GameEntity?>
 }

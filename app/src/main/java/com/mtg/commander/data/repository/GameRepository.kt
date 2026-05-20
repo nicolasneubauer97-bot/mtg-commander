@@ -19,14 +19,15 @@ class GameRepository(
         gameDao.getAllGames().map { it.map(GameEntity::toDomain) }
 
     fun getFinishedGames(): Flow<List<Game>> =
-        gameDao.getFinishedGames().map { it.map(GameEntity::toDomain) }
+        gameDao.getGamesByStatus(GameStatus.FINISHED).map { it.map(GameEntity::toDomain) }
 
     fun getActiveGames(): Flow<List<Game>> =
-        gameDao.getActiveGames().map { it.map(GameEntity::toDomain) }
+        gameDao.getGamesByStatus(GameStatus.IN_PROGRESS).map { it.map(GameEntity::toDomain) }
 
     suspend fun getGameById(id: Long): Game? = gameDao.getGameById(id)?.toDomain()
 
-    suspend fun getLatestActiveGame(): Game? = gameDao.getLatestActiveGame()?.toDomain()
+    suspend fun getLatestActiveGame(): Game? =
+        gameDao.getLatestActiveGame(GameStatus.IN_PROGRESS)?.toDomain()
 
     suspend fun createGame(playerDeckPairs: List<Pair<Long, Long>>): Long {
         val gameId = gameDao.insertGame(GameEntity())

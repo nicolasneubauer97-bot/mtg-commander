@@ -1,6 +1,7 @@
 package com.mtg.commander.data.dao
 
 import androidx.room.*
+import com.mtg.commander.data.entity.GameStatus
 import com.mtg.commander.data.entity.KillEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -13,18 +14,20 @@ interface KillDao {
     suspend fun getKillsForGameSync(gameId: Long): List<KillEntity>
 
     @Query("""
-        SELECT COUNT(*) FROM kills
-        WHERE killerParticipantId IN (SELECT id FROM game_participants WHERE playerId = :playerId)
-        AND gameId IN (SELECT id FROM games WHERE status = 'FINISHED')
+        SELECT COUNT(*) FROM kills k
+        INNER JOIN game_participants gp ON k.killerParticipantId = gp.id
+        INNER JOIN games g ON k.gameId = g.id
+        WHERE gp.playerId = :playerId AND g.status = :status
     """)
-    suspend fun getKillCountForPlayer(playerId: Long): Int
+    suspend fun getKillCountForPlayerWithStatus(playerId: Long, status: GameStatus): Int
 
     @Query("""
-        SELECT COUNT(*) FROM kills
-        WHERE victimParticipantId IN (SELECT id FROM game_participants WHERE playerId = :playerId)
-        AND gameId IN (SELECT id FROM games WHERE status = 'FINISHED')
+        SELECT COUNT(*) FROM kills k
+        INNER JOIN game_participants gp ON k.victimParticipantId = gp.id
+        INNER JOIN games g ON k.gameId = g.id
+        WHERE gp.playerId = :playerId AND g.status = :status
     """)
-    suspend fun getDeathCountForPlayer(playerId: Long): Int
+    suspend fun getDeathCountForPlayerWithStatus(playerId: Long, status: GameStatus): Int
 
     @Insert
     suspend fun insertKill(kill: KillEntity): Long

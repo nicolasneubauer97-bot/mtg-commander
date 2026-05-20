@@ -2,6 +2,7 @@ package com.mtg.commander.data.dao
 
 import androidx.room.*
 import com.mtg.commander.data.entity.GameParticipantEntity
+import com.mtg.commander.data.entity.GameStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -16,18 +17,24 @@ interface GameParticipantDao {
     suspend fun getParticipantById(id: Long): GameParticipantEntity?
 
     @Query("""
-        SELECT * FROM game_participants
-        WHERE playerId = :playerId
-        AND gameId IN (SELECT id FROM games WHERE status = 'FINISHED')
+        SELECT gp.* FROM game_participants gp
+        INNER JOIN games g ON gp.gameId = g.id
+        WHERE gp.playerId = :playerId AND g.status = :status
     """)
-    suspend fun getFinishedParticipantsForPlayer(playerId: Long): List<GameParticipantEntity>
+    suspend fun getParticipantsForPlayerWithStatus(
+        playerId: Long,
+        status: GameStatus
+    ): List<GameParticipantEntity>
 
     @Query("""
-        SELECT * FROM game_participants
-        WHERE deckId = :deckId
-        AND gameId IN (SELECT id FROM games WHERE status = 'FINISHED')
+        SELECT gp.* FROM game_participants gp
+        INNER JOIN games g ON gp.gameId = g.id
+        WHERE gp.deckId = :deckId AND g.status = :status
     """)
-    suspend fun getFinishedParticipantsForDeck(deckId: Long): List<GameParticipantEntity>
+    suspend fun getParticipantsForDeckWithStatus(
+        deckId: Long,
+        status: GameStatus
+    ): List<GameParticipantEntity>
 
     @Insert
     suspend fun insertParticipant(participant: GameParticipantEntity): Long
