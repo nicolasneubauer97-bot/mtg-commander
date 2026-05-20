@@ -88,6 +88,7 @@ fun NewGameScreen(app: MTGCommanderApp, onBack: () -> Unit, onGameStarted: (Long
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PlayerSelectionCard(
     player: Player,
