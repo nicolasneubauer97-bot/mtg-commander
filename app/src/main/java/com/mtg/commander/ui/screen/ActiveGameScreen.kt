@@ -588,12 +588,15 @@ private fun FullPlayerCard(
             if (!p.isEliminated && !isFinished) {
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { vm.showCommanderDamagePanel(
-                        if (state.showCommanderDamageFor == p.id) null else p.id) },
-                        Modifier.weight(1f)) { Text("CMD-Schaden") }
-                    Button(onClick = { vm.showEliminateDialog(p.id) },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        Modifier.weight(1f)) { Text("Eliminieren") }
+                    OutlinedButton(
+                        onClick = { vm.showCommanderDamagePanel(if (state.showCommanderDamageFor == p.id) null else p.id) },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("CMD-Schaden") }
+                    Button(
+                        onClick = { vm.showEliminateDialog(p.id) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text("Eliminieren") }
                 }
             }
             // Würfel + Randomizer (pro Spieler)
@@ -640,7 +643,7 @@ private fun InlineCounter(
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (onMinus != null) {
-            TextButton(onClick = onMinus, Modifier.size(22.dp), PaddingValues(0.dp)) {
+            TextButton(onClick = onMinus, modifier = Modifier.size(22.dp), contentPadding = PaddingValues(0.dp)) {
                 Text("-", fontSize = labelSize, fontWeight = FontWeight.Bold)
             }
         }
@@ -651,7 +654,7 @@ private fun InlineCounter(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (onPlus != null) {
-            TextButton(onClick = onPlus, Modifier.size(22.dp), PaddingValues(0.dp)) {
+            TextButton(onClick = onPlus, modifier = Modifier.size(22.dp), contentPadding = PaddingValues(0.dp)) {
                 Text("+", fontSize = labelSize, fontWeight = FontWeight.Bold)
             }
         }

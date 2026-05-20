@@ -20,9 +20,24 @@ data class PlayerSelection(
     val selectedDeck: Deck? = null
 )
 
+// Sitzposition im 4-Spieler-Layout
+// 0 = Unten-Links, 1 = Unten-Rechts, 2 = Oben-Links (180°), 3 = Oben-Rechts (180°)
+data class SeatAssignment(
+    val seatIndex: Int,
+    val label: String
+)
+
+val SEAT_LABELS_4 = listOf("Unten-Links", "Unten-Rechts", "Oben-Links", "Oben-Rechts")
+val SEAT_LABELS_3 = listOf("Unten-Links", "Unten-Rechts", "Oben-Mitte")
+val SEAT_LABELS_2 = listOf("Oben", "Unten")
+
 data class NewGameUiState(
     val allPlayers: List<Player> = emptyList(),
     val selectedPlayers: List<PlayerSelection> = emptyList(),
+    // seatAssignments: Index im finalen Spieler-Array → PlayerSelection
+    // null = noch nicht zugewiesen (automatisch)
+    val seatAssignments: List<PlayerSelection?> = List(4) { null },
+    val showSeatDialog: Boolean = false,
     val gameId: Long? = null,
     val error: String? = null
 )
@@ -64,10 +79,32 @@ class NewGameViewModel(
     }
 
     fun selectDeck(player: Player, deck: Deck?) {
-        val updated = _uiState.value.selectedPlayers.map { sel ->
-            if (sel.player.id == player.id) sel.copy(selectedDeck = deck) else sel
+        _uiState.value = _uiState.value.copy(
+            selectedPlayers = _uiState.value.selectedPlayers.map { sel ->
+                if (sel.player.id == player.id) sel.copy(selectedDeck = deck) else sel
+            }
+        )
+    }
+
+    // Sitzordnung: Spieler an Sitz-Index schieben
+    fun assignSeat(seatIndex: Int, selection: PlayerSelection?) {
+        val seats = _uiState.value.seatAssignments.toMutableList()
+        // Alten Sitz desselben Spielers leeren
+        if (selection != null) {
+            for (i in seats.indices) {
+                if (seats[i]?.player?.id == selection.player.id) seats[i] = null
+            }
         }
-        _uiState.value = _uiState.value.copy(selectedPlayers = updated)
+        seats[seatIndex] = selection
+        _uiState.value = _uiState.value.copy(seatAssignments = seats)
+    }
+
+    fun showSeatDialog() {
+        _uiState.value = _uiState.value.copy(showSeatDialog = true)
+    }
+
+    fun dismissSeatDialog() {
+        _uiState.value = _uiState.value.copy(showSeatDialog = false)
     }
 
     fun startGame() {
@@ -76,8 +113,24 @@ class NewGameViewModel(
             _uiState.value = _uiState.value.copy(error = "Mindestens 2 Spieler erforderlich")
             return
         }
+
+        // Sitzordnung auflösen: Slots mit Zuweisungen zuerst, dann Rest auffüllen
+        val count = selections.size
+        val seats = _uiState.value.seatAssignments.take(count)
+        val assigned = seats.take(count).toMutableList()
+
+        // Nicht zugewiesene Slots mit verbleibenden Spielern füllen
+        val unassignedPlayers = selections.filter { sel ->
+            assigned.none { it?.player?.id == sel.player.id }
+        }.toMutableList()
+        for (i in assigned.indices) {
+            if (assigned[i] == null && unassignedPlayers.isNotEmpty()) {
+                assigned[i] = unassignedPlayers.removeAt(0)
+            }
+        }
+
         viewModelScope.launch {
-            val pairs = selections.map { it.player.id to it.selectedDeck?.id }
+            val pairs = assigned.mapNotNull { it }.map { it.player.id to it.selectedDeck?.id }
             val gameId = gameRepository.createGame(pairs)
             _uiState.value = _uiState.value.copy(gameId = gameId)
         }
