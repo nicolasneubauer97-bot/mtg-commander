@@ -10,12 +10,15 @@ import com.mtg.commander.data.repository.PlayerRepository
 import com.mtg.commander.domain.model.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 data class ParticipantUiState(
     val participant: GameParticipant,
     val player: Player,
     val deck: Deck,
-    val commanderDamageReceived: Map<Long, Int> = emptyMap()
+    val commanderDamageReceived: Map<Long, Int> = emptyMap(),
+    val poisonCounters: Int = 0,
+    val optionalCounter: Int = 0
 )
 
 data class ActiveGameUiState(
@@ -26,7 +29,14 @@ data class ActiveGameUiState(
     val isLoading: Boolean = true,
     val showCommanderDamageFor: Long? = null,
     val showEliminateDialogFor: Long? = null,
-    val showEndGameConfirm: Boolean = false
+    val showEndGameConfirm: Boolean = false,
+    val startingPlayerId: Long? = null,
+    val diceResult: Int? = null,
+    val randomOpponentId: Long? = null,
+    val optionalCounterLabel: String = "Bonus",
+    val showOptionalCounterLabelDialog: Boolean = false,
+    val poisonCounters: Map<Long, Int> = emptyMap(),
+    val optionalCounters: Map<Long, Int> = emptyMap()
 )
 
 class ActiveGameViewModel(
@@ -59,14 +69,24 @@ class ActiveGameViewModel(
                     val receivedDamage = damage
                         .filter { it.targetParticipantId == p.id }
                         .associate { it.attackerParticipantId to it.damage }
-                    ParticipantUiState(p, player, deck, receivedDamage)
+                    val poison = _uiState.value.poisonCounters[p.id] ?: 0
+                    val optional = _uiState.value.optionalCounters[p.id] ?: 0
+                    ParticipantUiState(p, player, deck, receivedDamage, poison, optional)
                 }
-                _uiState.value = _uiState.value.copy(
+
+                val currentState = _uiState.value
+                val startingId = currentState.startingPlayerId
+                    ?: if (participantUiStates.isNotEmpty())
+                        participantUiStates.random().participant.id
+                    else null
+
+                _uiState.value = currentState.copy(
                     game = game,
                     participants = participantUiStates,
                     commanderDamage = damage,
                     kills = kills,
-                    isLoading = false
+                    isLoading = false,
+                    startingPlayerId = startingId
                 )
             }
         }
@@ -77,6 +97,26 @@ class ActiveGameViewModel(
             val p = _uiState.value.participants.find { it.participant.id == participantId }?.participant ?: return@launch
             gameRepository.updateParticipant(p.copy(currentLife = p.currentLife + delta))
         }
+    }
+
+    fun updatePoison(participantId: Long, delta: Int) {
+        val current = _uiState.value.poisonCounters.toMutableMap()
+        val newVal = maxOf(0, (current[participantId] ?: 0) + delta)
+        current[participantId] = newVal
+        val participants = _uiState.value.participants.map { p ->
+            if (p.participant.id == participantId) p.copy(poisonCounters = newVal) else p
+        }
+        _uiState.value = _uiState.value.copy(poisonCounters = current, participants = participants)
+    }
+
+    fun updateOptionalCounter(participantId: Long, delta: Int) {
+        val current = _uiState.value.optionalCounters.toMutableMap()
+        val newVal = (current[participantId] ?: 0) + delta
+        current[participantId] = newVal
+        val participants = _uiState.value.participants.map { p ->
+            if (p.participant.id == participantId) p.copy(optionalCounter = newVal) else p
+        }
+        _uiState.value = _uiState.value.copy(optionalCounters = current, participants = participants)
     }
 
     fun showCommanderDamagePanel(participantId: Long?) {
@@ -102,32 +142,57 @@ class ActiveGameViewModel(
             val allParticipants = gameRepository.getParticipantsForGameSync(gameId)
             val activePlayers = allParticipants.filter { !it.isEliminated }
             val placement = activePlayers.size
-
             val victim = activePlayers.find { it.id == victimId } ?: return@launch
             gameRepository.updateParticipant(
-                victim.copy(
-                    isEliminated = true,
-                    placement = placement,
-                    eliminatedAt = System.currentTimeMillis()
-                )
+                victim.copy(isEliminated = true, placement = placement, eliminatedAt = System.currentTimeMillis())
             )
-
             gameRepository.insertKill(
                 Kill(gameId = gameId, killerParticipantId = killerId, victimParticipantId = victimId)
             )
-
             val remaining = activePlayers.filter { it.id != victimId }
             if (remaining.size == 1) {
                 val winner = remaining.first()
                 gameRepository.updateParticipant(winner.copy(placement = 1))
                 val game = gameRepository.getGameById(gameId)!!
-                gameRepository.updateGame(
-                    game.copy(status = "FINISHED", endedAt = System.currentTimeMillis())
-                )
+                gameRepository.updateGame(game.copy(status = "FINISHED", endedAt = System.currentTimeMillis()))
             }
-
             _uiState.value = _uiState.value.copy(showEliminateDialogFor = null)
         }
+    }
+
+    fun rollDice() {
+        _uiState.value = _uiState.value.copy(diceResult = Random.nextInt(1, 7))
+    }
+
+    fun clearDice() {
+        _uiState.value = _uiState.value.copy(diceResult = null)
+    }
+
+    fun randomizeOpponent(myParticipantId: Long) {
+        val others = _uiState.value.participants
+            .filter { it.participant.id != myParticipantId && !it.participant.isEliminated }
+        if (others.isNotEmpty()) {
+            _uiState.value = _uiState.value.copy(randomOpponentId = others.random().participant.id)
+        }
+    }
+
+    fun clearRandomOpponent() {
+        _uiState.value = _uiState.value.copy(randomOpponentId = null)
+    }
+
+    fun showOptionalCounterLabelDialog() {
+        _uiState.value = _uiState.value.copy(showOptionalCounterLabelDialog = true)
+    }
+
+    fun setOptionalCounterLabel(label: String) {
+        _uiState.value = _uiState.value.copy(
+            optionalCounterLabel = label.ifBlank { "Bonus" },
+            showOptionalCounterLabelDialog = false
+        )
+    }
+
+    fun dismissOptionalCounterLabelDialog() {
+        _uiState.value = _uiState.value.copy(showOptionalCounterLabelDialog = false)
     }
 
     fun showEndGameConfirm() {
@@ -141,9 +206,7 @@ class ActiveGameViewModel(
     fun endGame() {
         viewModelScope.launch {
             val game = gameRepository.getGameById(gameId) ?: return@launch
-            gameRepository.updateGame(
-                game.copy(status = "FINISHED", endedAt = System.currentTimeMillis())
-            )
+            gameRepository.updateGame(game.copy(status = "FINISHED", endedAt = System.currentTimeMillis()))
             _uiState.value = _uiState.value.copy(showEndGameConfirm = false)
         }
     }
