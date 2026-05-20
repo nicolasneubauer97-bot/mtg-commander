@@ -34,4 +34,7 @@ interface KillDao {
 
     @Delete
     suspend fun deleteKill(kill: KillEntity)
+
+    @Query("DELETE FROM kills")
+    suspend fun deleteAllKills()
 }

@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -14,6 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.ui.viewmodel.HomeViewModel
+import com.mtg.commander.ui.viewmodel.ResetOption
 
 @Composable
 fun HomeScreen(
@@ -36,60 +38,173 @@ fun HomeScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "MTG Commander",
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            text = "Tracker",
-            fontSize = 18.sp,
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.padding(bottom = 48.dp)
-        )
+        Text("MTG Commander", fontSize = 32.sp, fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary)
+        Text("Tracker", fontSize = 18.sp, color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(bottom = 40.dp))
 
         if (state.activeGame != null) {
             FilledTonalButton(
                 onClick = { onResume(state.activeGame!!.id) },
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                Icon(Icons.Filled.PlayArrow, null, modifier = Modifier.padding(end = 8.dp))
                 Text("Laufende Partie fortsetzen", fontSize = 16.sp)
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
         }
 
-        Button(
-            onClick = onNewGame,
-            modifier = Modifier.fillMaxWidth().height(56.dp)
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+        Button(onClick = onNewGame, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+            Icon(Icons.Filled.Add, null, modifier = Modifier.padding(end = 8.dp))
             Text("Neue Partie", fontSize = 16.sp)
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider()
-        Spacer(modifier = Modifier.height(16.dp))
 
-        HomeNavButton(icon = Icons.Filled.Person, label = "Spieler", onClick = onPlayers)
-        Spacer(modifier = Modifier.height(8.dp))
-        HomeNavButton(icon = Icons.Filled.Style, label = "Decks", onClick = onDecks)
-        Spacer(modifier = Modifier.height(8.dp))
-        HomeNavButton(icon = Icons.Filled.Leaderboard, label = "Leaderboard", onClick = onLeaderboard)
-        Spacer(modifier = Modifier.height(8.dp))
-        HomeNavButton(icon = Icons.Filled.BarChart, label = "Deck-Statistiken", onClick = onDeckStats)
-        Spacer(modifier = Modifier.height(8.dp))
-        // HomeNavButton(icon = Icons.Filled.History, label = "Spielhistorie", onClick = onHistory)
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(16.dp))
+
+        HomeNavButton(Icons.Filled.Person,      "Spieler",          onPlayers)
+        Spacer(Modifier.height(8.dp))
+        HomeNavButton(Icons.Filled.Style,       "Decks",            onDecks)
+        Spacer(Modifier.height(8.dp))
+        HomeNavButton(Icons.Filled.Leaderboard, "Leaderboard",      onLeaderboard)
+        Spacer(Modifier.height(8.dp))
+        HomeNavButton(Icons.Filled.BarChart,    "Deck-Statistiken", onDeckStats)
+        Spacer(Modifier.height(8.dp))
+        // HomeNavButton(Icons.Filled.History, "Spielhistorie", onHistory)
+
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = vm::showResetDialog,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.error
+            )
+        ) {
+            Icon(Icons.Filled.DeleteSweep, null, modifier = Modifier.padding(end = 8.dp))
+            Text("Statistiken zurücksetzen")
+        }
+    }
+
+    // ─── Reset-Option-Dialog ──────────────────────────────────────────────────
+    if (state.showResetDialog) {
+        AlertDialog(
+            onDismissRequest = vm::dismissResetDialog,
+            title = { Text("Statistiken zurücksetzen") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Was soll zurückgesetzt werden?",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 8.dp))
+
+                    ResetOptionRow(
+                        selected = state.selectedReset == ResetOption.FINISHED_GAMES,
+                        label = "Spielhistorie löschen",
+                        description = "Alle abgeschlossenen Spiele inkl. Platzierungen, Kills und Commander-Schaden.",
+                        onClick = { vm.selectResetOption(ResetOption.FINISHED_GAMES) }
+                    )
+                    ResetOptionRow(
+                        selected = state.selectedReset == ResetOption.KILLS_ONLY,
+                        label = "Nur Kills zurücksetzen",
+                        description = "Kill-Einträge löschen. Spielhistorie und Platzierungen bleiben erhalten.",
+                        onClick = { vm.selectResetOption(ResetOption.KILLS_ONLY) }
+                    )
+                    ResetOptionRow(
+                        selected = state.selectedReset == ResetOption.COMMANDER_DAMAGE_ONLY,
+                        label = "Nur Commander-Schaden zurücksetzen",
+                        description = "Commander-Schaden-Einträge löschen. Spielhistorie bleibt erhalten.",
+                        onClick = { vm.selectResetOption(ResetOption.COMMANDER_DAMAGE_ONLY) }
+                    )
+                    ResetOptionRow(
+                        selected = state.selectedReset == ResetOption.EVERYTHING,
+                        label = "Alles zurücksetzen",
+                        description = "Alle Spiele (inkl. laufende), Kills und Commander-Schaden. Spieler und Decks bleiben.",
+                        isDestructive = true,
+                        onClick = { vm.selectResetOption(ResetOption.EVERYTHING) }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = vm::requestResetConfirm,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Weiter") }
+            },
+            dismissButton = {
+                TextButton(onClick = vm::dismissResetDialog) { Text("Abbrechen") }
+            }
+        )
+    }
+
+    // ─── Bestätigungs-Dialog ──────────────────────────────────────────────────
+    if (state.showResetConfirm) {
+        val label = when (state.selectedReset) {
+            ResetOption.FINISHED_GAMES -> "Spielhistorie löschen"
+            ResetOption.KILLS_ONLY -> "Alle Kills zurücksetzen"
+            ResetOption.COMMANDER_DAMAGE_ONLY -> "Commander-Schaden zurücksetzen"
+            ResetOption.EVERYTHING -> "Alles zurücksetzen"
+        }
+        AlertDialog(
+            onDismissRequest = vm::dismissResetConfirm,
+            title = { Text("Sicher?") },
+            text = { Text("\"$label\" kann nicht rückgängig gemacht werden.") },
+            confirmButton = {
+                Button(
+                    onClick = vm::executeReset,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Jetzt zurücksetzen") }
+            },
+            dismissButton = {
+                TextButton(onClick = vm::dismissResetConfirm) { Text("Abbrechen") }
+            }
+        )
+    }
+
+    // ─── Erfolgs-Snackbar ─────────────────────────────────────────────────────
+    if (state.resetDone) {
+        LaunchedEffect(Unit) {
+            kotlinx.coroutines.delay(2000)
+            vm.clearResetDone()
+        }
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            Snackbar(modifier = Modifier.padding(16.dp)) {
+                Text("Statistiken wurden zurückgesetzt.")
+            }
+        }
     }
 }
 
 @Composable
-private fun HomeNavButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(48.dp)
+private fun ResetOptionRow(
+    selected: Boolean,
+    label: String,
+    description: String,
+    isDestructive: Boolean = false,
+    onClick: () -> Unit
+) {
+    val labelColor = if (isDestructive) MaterialTheme.colorScheme.error
+                     else MaterialTheme.colorScheme.onSurface
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+        RadioButton(selected = selected, onClick = onClick, modifier = Modifier.padding(top = 2.dp))
+        Column(modifier = Modifier.padding(start = 4.dp)) {
+            Text(label, fontWeight = FontWeight.SemiBold, color = labelColor,
+                style = MaterialTheme.typography.bodyMedium)
+            Text(description, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun HomeNavButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+        Icon(icon, null, modifier = Modifier.padding(end = 8.dp))
         Text(label)
     }
 }

@@ -52,6 +52,15 @@ class GameRepository(
 
     suspend fun deleteGame(game: Game) = gameDao.deleteGame(game.toEntity())
 
+    suspend fun deleteAllFinishedGames() =
+        gameDao.deleteGamesByStatus(GameStatus.FINISHED)
+
+    suspend fun deleteAllGames() = gameDao.deleteAllGames()
+
+    suspend fun deleteAllKills() = killDao.deleteAllKills()
+
+    suspend fun deleteAllCommanderDamage() = commanderDamageDao.deleteAllCommanderDamage()
+
     fun getCommanderDamageForGame(gameId: Long): Flow<List<CommanderDamage>> =
         commanderDamageDao.getCommanderDamageForGame(gameId).map { it.map(CommanderDamageEntity::toDomain) }
 

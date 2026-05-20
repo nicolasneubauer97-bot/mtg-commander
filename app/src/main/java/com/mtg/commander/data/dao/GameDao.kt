@@ -30,4 +30,10 @@ interface GameDao {
 
     @Query("SELECT * FROM games WHERE id = :id")
     fun observeGameById(id: Long): Flow<GameEntity?>
+
+    @Query("DELETE FROM games WHERE status = :status")
+    suspend fun deleteGamesByStatus(status: GameStatus)
+
+    @Query("DELETE FROM games")
+    suspend fun deleteAllGames()
 }

@@ -25,4 +25,7 @@ interface CommanderDamageDao {
 
     @Update
     suspend fun updateCommanderDamage(damage: CommanderDamageEntity)
+
+    @Query("DELETE FROM commander_damage")
+    suspend fun deleteAllCommanderDamage()
 }
