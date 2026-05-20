@@ -282,14 +282,17 @@ private fun MiniPlayerPanel(
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center) {
                 if (!p.isEliminated && !isFinished) {
-                    MiniBtn("-5", btnSize, smallSize) { vm.updateLife(p.id, -5) }
-                    MiniBtn("-1", btnSize, smallSize) { vm.updateLife(p.id, -1) }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        MiniBtn("-10", btnSize * 0.9f, smallSize) { vm.updateLife(p.id, -10) }
+                        MiniBtn("-5",  btnSize * 0.9f, smallSize) { vm.updateLife(p.id, -5) }
+                        MiniBtn("-1",  btnSize * 0.9f, smallSize) { vm.updateLife(p.id, -1) }
+                    }
                 }
                 Text(
                     "${p.currentLife}",
-                    fontSize = lifeSize,
+                    fontSize = (lifeSize.value * 1.3f).sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 4.dp),
+                    modifier = Modifier.padding(horizontal = 6.dp),
                     color = when {
                         p.currentLife <= 0 -> MaterialTheme.colorScheme.error
                         p.currentLife <= 10 -> MaterialTheme.colorScheme.error.copy(alpha = 0.75f)
@@ -297,8 +300,11 @@ private fun MiniPlayerPanel(
                     }
                 )
                 if (!p.isEliminated && !isFinished) {
-                    MiniBtn("+1", btnSize, smallSize) { vm.updateLife(p.id, +1) }
-                    MiniBtn("+5", btnSize, smallSize) { vm.updateLife(p.id, +5) }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        MiniBtn("+10", btnSize * 0.9f, smallSize) { vm.updateLife(p.id, +10) }
+                        MiniBtn("+5",  btnSize * 0.9f, smallSize) { vm.updateLife(p.id, +5) }
+                        MiniBtn("+1",  btnSize * 0.9f, smallSize) { vm.updateLife(p.id, +1) }
+                    }
                 }
             }
 
@@ -334,6 +340,25 @@ private fun MiniPlayerPanel(
                         modifier = Modifier.height(btnSize),
                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
                     ) { Text("✕", fontSize = smallSize) }
+                }
+            }
+            // Würfel / Randomizer / Counter-Label (für jeden Spieler sichtbar)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = vm::rollDice, modifier = Modifier.size(btnSize)) {
+                    Icon(Icons.Filled.Casino, "Würfel", modifier = Modifier.fillMaxSize())
+                }
+                IconButton(
+                    onClick = { vm.randomizeOpponent(p.id) },
+                    modifier = Modifier.size(btnSize)
+                ) {
+                    Icon(Icons.Filled.Shuffle, "Zufall", modifier = Modifier.fillMaxSize())
+                }
+                IconButton(
+                    onClick = vm::showOptionalCounterLabelDialog,
+                    modifier = Modifier.size(btnSize * 0.8f)
+                ) {
+                    Icon(Icons.Filled.Edit, "Counter-Name", modifier = Modifier.fillMaxSize())
                 }
             }
 
@@ -518,16 +543,22 @@ private fun FullPlayerCard(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically) {
                 if (!p.isEliminated && !isFinished) {
-                    LifeBtn("-5") { vm.updateLife(p.id, -5) }
-                    LifeBtn("-1") { vm.updateLife(p.id, -1) }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        LifeBtn("-10") { vm.updateLife(p.id, -10) }
+                        LifeBtn("-5")  { vm.updateLife(p.id, -5) }
+                        LifeBtn("-1")  { vm.updateLife(p.id, -1) }
+                    }
                 }
-                Text("${p.currentLife}", fontSize = 52.sp, fontWeight = FontWeight.Bold,
+                Text("${p.currentLife}", fontSize = 64.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 8.dp),
                     color = if (p.currentLife <= 10) MaterialTheme.colorScheme.error
                             else MaterialTheme.colorScheme.onSurface)
                 if (!p.isEliminated && !isFinished) {
-                    LifeBtn("+1") { vm.updateLife(p.id, +1) }
-                    LifeBtn("+5") { vm.updateLife(p.id, +5) }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        LifeBtn("+10") { vm.updateLife(p.id, +10) }
+                        LifeBtn("+5")  { vm.updateLife(p.id, +5) }
+                        LifeBtn("+1")  { vm.updateLife(p.id, +1) }
+                    }
                 }
             }
 
@@ -559,6 +590,20 @@ private fun FullPlayerCard(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.weight(1f)
                     ) { Text("Eliminieren") }
+                }
+            }
+            // Würfel / Randomizer / Counter-Label – pro Spieler
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 4.dp)) {
+                IconButton(onClick = vm::rollDice) {
+                    Icon(Icons.Filled.Casino, "Würfel")
+                }
+                IconButton(onClick = { vm.randomizeOpponent(p.id) }) {
+                    Icon(Icons.Filled.Shuffle, "Zufall")
+                }
+                IconButton(onClick = vm::showOptionalCounterLabelDialog) {
+                    Icon(Icons.Filled.Edit, "Counter-Name")
                 }
             }
 
