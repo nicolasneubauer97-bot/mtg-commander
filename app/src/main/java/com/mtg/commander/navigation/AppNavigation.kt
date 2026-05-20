@@ -1,0 +1,99 @@
+package com.mtg.commander.navigation
+
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import com.mtg.commander.MTGCommanderApp
+import com.mtg.commander.ui.screen.*
+
+sealed class Screen(val route: String) {
+    object Home : Screen("home")
+    object Players : Screen("players")
+    object Decks : Screen("decks")
+    object NewGame : Screen("new_game")
+    object Leaderboard : Screen("leaderboard")
+    object DeckStats : Screen("deck_stats")
+    object GameHistory : Screen("game_history")
+    object ActiveGame : Screen("active_game/{gameId}") {
+        fun createRoute(gameId: Long) = "active_game/$gameId"
+    }
+    object GameDetail : Screen("game_detail/{gameId}") {
+        fun createRoute(gameId: Long) = "game_detail/$gameId"
+    }
+}
+
+@Composable
+fun AppNavigation(navController: NavHostController) {
+    val app = LocalContext.current.applicationContext as MTGCommanderApp
+
+    NavHost(navController = navController, startDestination = Screen.Home.route) {
+        composable(Screen.Home.route) {
+            HomeScreen(
+                app = app,
+                onNewGame = { navController.navigate(Screen.NewGame.route) },
+                onResume = { gameId -> navController.navigate(Screen.ActiveGame.createRoute(gameId)) },
+                onPlayers = { navController.navigate(Screen.Players.route) },
+                onDecks = { navController.navigate(Screen.Decks.route) },
+                onLeaderboard = { navController.navigate(Screen.Leaderboard.route) },
+                onDeckStats = { navController.navigate(Screen.DeckStats.route) },
+                onHistory = { navController.navigate(Screen.GameHistory.route) }
+            )
+        }
+        composable(Screen.Players.route) {
+            PlayersScreen(app = app, onBack = { navController.popBackStack() })
+        }
+        composable(Screen.Decks.route) {
+            DecksScreen(app = app, onBack = { navController.popBackStack() })
+        }
+        composable(Screen.NewGame.route) {
+            NewGameScreen(
+                app = app,
+                onBack = { navController.popBackStack() },
+                onGameStarted = { gameId ->
+                    navController.navigate(Screen.ActiveGame.createRoute(gameId)) {
+                        popUpTo(Screen.Home.route)
+                    }
+                }
+            )
+        }
+        composable(
+            route = Screen.ActiveGame.route,
+            arguments = listOf(navArgument("gameId") { type = NavType.LongType })
+        ) { backStack ->
+            val gameId = backStack.arguments!!.getLong("gameId")
+            ActiveGameScreen(
+                gameId = gameId,
+                app = app,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.Leaderboard.route) {
+            LeaderboardScreen(app = app, onBack = { navController.popBackStack() })
+        }
+        composable(Screen.DeckStats.route) {
+            DeckStatsScreen(app = app, onBack = { navController.popBackStack() })
+        }
+        composable(Screen.GameHistory.route) {
+            GameHistoryScreen(
+                app = app,
+                onBack = { navController.popBackStack() },
+                onGameDetail = { gameId -> navController.navigate(Screen.GameDetail.createRoute(gameId)) }
+            )
+        }
+        composable(
+            route = Screen.GameDetail.route,
+            arguments = listOf(navArgument("gameId") { type = NavType.LongType })
+        ) { backStack ->
+            val gameId = backStack.arguments!!.getLong("gameId")
+            GameDetailScreen(
+                gameId = gameId,
+                app = app,
+                onBack = { navController.popBackStack() }
+            )
+        }
+    }
+}
