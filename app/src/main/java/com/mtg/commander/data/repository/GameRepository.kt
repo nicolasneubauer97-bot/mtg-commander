@@ -29,7 +29,7 @@ class GameRepository(
     suspend fun getLatestActiveGame(): Game? =
         gameDao.getLatestActiveGame(GameStatus.IN_PROGRESS)?.toDomain()
 
-    suspend fun createGame(playerDeckPairs: List<Pair<Long, Long>>): Long {
+    suspend fun createGame(playerDeckPairs: List<Pair<Long, Long?>>): Long {
         val gameId = gameDao.insertGame(GameEntity())
         playerDeckPairs.forEach { (playerId, deckId) ->
             participantDao.insertParticipant(
@@ -106,6 +106,7 @@ private fun GameParticipant.toEntity() = GameParticipantEntity(
     startingLife = startingLife, currentLife = currentLife,
     placement = placement, isEliminated = isEliminated, eliminatedAt = eliminatedAt
 )
+
 
 private fun CommanderDamageEntity.toDomain() = CommanderDamage(
     id = id, gameId = gameId,

@@ -15,7 +15,7 @@ import kotlin.random.Random
 data class ParticipantUiState(
     val participant: GameParticipant,
     val player: Player,
-    val deck: Deck,
+    val deck: Deck?,
     val commanderDamageReceived: Map<Long, Int> = emptyMap(),
     val poisonCounters: Int = 0,
     val optionalCounter: Int = 0
@@ -65,7 +65,7 @@ class ActiveGameViewModel(
                 val game = gameRepository.getGameById(gameId)
                 val participantUiStates = participants.mapNotNull { p ->
                     val player = playerRepository.getPlayerById(p.playerId) ?: return@mapNotNull null
-                    val deck = deckRepository.getDeckById(p.deckId) ?: return@mapNotNull null
+                    val deck = p.deckId?.let { deckRepository.getDeckById(it) }
                     val receivedDamage = damage
                         .filter { it.targetParticipantId == p.id }
                         .associate { it.attackerParticipantId to it.damage }

@@ -63,7 +63,7 @@ class NewGameViewModel(
         }
     }
 
-    fun selectDeck(player: Player, deck: Deck) {
+    fun selectDeck(player: Player, deck: Deck?) {
         val updated = _uiState.value.selectedPlayers.map { sel ->
             if (sel.player.id == player.id) sel.copy(selectedDeck = deck) else sel
         }
@@ -76,12 +76,8 @@ class NewGameViewModel(
             _uiState.value = _uiState.value.copy(error = "Mindestens 2 Spieler erforderlich")
             return
         }
-        if (selections.any { it.selectedDeck == null }) {
-            _uiState.value = _uiState.value.copy(error = "Jeder Spieler braucht ein Deck")
-            return
-        }
         viewModelScope.launch {
-            val pairs = selections.map { it.player.id to it.selectedDeck!!.id }
+            val pairs = selections.map { it.player.id to it.selectedDeck?.id }
             val gameId = gameRepository.createGame(pairs)
             _uiState.value = _uiState.value.copy(gameId = gameId)
         }

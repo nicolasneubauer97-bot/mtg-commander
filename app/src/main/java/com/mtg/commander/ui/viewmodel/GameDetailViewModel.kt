@@ -41,7 +41,7 @@ class GameDetailViewModel(
                 val game = gameRepository.getGameById(gameId)
                 val participantUiStates = participants.mapNotNull { p ->
                     val player = playerRepository.getPlayerById(p.playerId) ?: return@mapNotNull null
-                    val deck = deckRepository.getDeckById(p.deckId) ?: return@mapNotNull null
+                    val deck = p.deckId?.let { deckRepository.getDeckById(it) }
                     val receivedDamage = damage
                         .filter { it.targetParticipantId == p.id }
                         .associate { it.attackerParticipantId to it.damage }

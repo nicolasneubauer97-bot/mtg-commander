@@ -1,7 +1,6 @@
 package com.mtg.commander.ui.screen
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,10 +11,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -23,6 +25,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.ui.theme.EliminatedColor
 import com.mtg.commander.ui.theme.WinnerColor
+import com.mtg.commander.ui.viewmodel.ActiveGameUiState
 import com.mtg.commander.ui.viewmodel.ActiveGameViewModel
 import com.mtg.commander.ui.viewmodel.ParticipantUiState
 
@@ -35,19 +38,26 @@ fun ActiveGameScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
     )
     val state by vm.uiState.collectAsStateWithLifecycle()
     val isFinished = state.game?.isFinished == true
-    val count = state.participants.size
 
     if (state.isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
     }
 
-    when (count) {
-        3, 4 -> RotatingLayout(vm = vm, state = state, isFinished = isFinished, onBack = onBack)
-        else -> ScrollLayout(vm = vm, state = state, isFinished = isFinished, onBack = onBack)
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val W = maxWidth
+        val H = maxHeight
+        val count = state.participants.size
+
+        if (count >= 3) {
+            RotatingLayout(vm, state, isFinished, onBack, W, H)
+        } else {
+            ScrollLayout(vm, state, isFinished, onBack)
+        }
     }
 
-    // Dialoge
+    // ─── Globale Dialoge ──────────────────────────────────────────────────────
+
     if (state.showEliminateDialogFor != null) {
         val victim = state.participants.find { it.participant.id == state.showEliminateDialogFor }
         if (victim != null) {
@@ -79,11 +89,8 @@ fun ActiveGameScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
             title = { Text("Counter benennen") },
             text = {
                 OutlinedTextField(
-                    value = label,
-                    onValueChange = { label = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    value = label, onValueChange = { label = it },
+                    label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
             },
             confirmButton = { TextButton(onClick = { vm.setOptionalCounterLabel(label) }) { Text("OK") } },
@@ -94,34 +101,24 @@ fun ActiveGameScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
     state.diceResult?.let { result ->
         AlertDialog(
             onDismissRequest = vm::clearDice,
-            title = { Text("Wuerfel", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+            title = { Text("Würfel", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
             text = {
-                Text(
-                    text = "$result",
-                    fontSize = 72.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Text("$result", fontSize = 72.sp, fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             },
             confirmButton = { TextButton(onClick = vm::clearDice) { Text("OK") } }
         )
     }
 
     state.randomOpponentId?.let { id ->
-        val opponent = state.participants.find { it.participant.id == id }
-        if (opponent != null) {
+        val opp = state.participants.find { it.participant.id == id }
+        if (opp != null) {
             AlertDialog(
                 onDismissRequest = vm::clearRandomOpponent,
-                title = { Text("Zufaelliger Gegner") },
+                title = { Text("Zufälliger Gegner") },
                 text = {
-                    Text(
-                        opponent.player.name,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Text(opp.player.name, fontSize = 28.sp, fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 },
                 confirmButton = { TextButton(onClick = vm::clearRandomOpponent) { Text("OK") } }
             )
@@ -137,13 +134,9 @@ fun ActiveGameScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
                     onDismissRequest = { shown = false },
                     title = { Text("Wer beginnt?") },
                     text = {
-                        Text(
-                            "${starter.player.name} beginnt!",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Text("${starter.player.name} beginnt!", fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth())
                     },
                     confirmButton = { TextButton(onClick = { shown = false }) { Text("Los geht's!") } }
                 )
@@ -152,187 +145,223 @@ fun ActiveGameScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
     }
 }
 
-// ─── Rotierendes 4-Spieler-Layout ───────────────────────────────────────────
+// ─── Rotierendes Layout (3-4 Spieler) ────────────────────────────────────────
 
 @Composable
 private fun RotatingLayout(
     vm: ActiveGameViewModel,
-    state: com.mtg.commander.ui.viewmodel.ActiveGameUiState,
+    state: ActiveGameUiState,
     isFinished: Boolean,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    W: Dp,
+    H: Dp
 ) {
-    val participants = state.participants
-    val count = participants.size
+    val halfW = W / 2
+    val halfH = H / 2
+    val p = state.participants
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        when (count) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (p.size) {
             4 -> {
-                // Top (rotiert 180°)
-                Box(
-                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.5f).align(Alignment.TopCenter)
-                        .rotate(180f)
-                ) {
-                    MiniPlayerPanel(vm, state, participants[1], isFinished, Modifier.fillMaxSize())
-                }
-                // Bottom
-                Box(
-                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.5f).align(Alignment.BottomCenter)
-                ) {
-                    MiniPlayerPanel(vm, state, participants[0], isFinished, Modifier.fillMaxSize())
-                }
-                // Left (rotiert 90°)
-                Box(
-                    modifier = Modifier.fillMaxWidth(0.5f).fillMaxHeight().align(Alignment.CenterStart)
-                        .rotate(90f)
-                ) {
-                    MiniPlayerPanel(vm, state, participants[2], isFinished, Modifier.fillMaxSize())
-                }
-                // Right (rotiert 270°)
-                Box(
-                    modifier = Modifier.fillMaxWidth(0.5f).fillMaxHeight().align(Alignment.CenterEnd)
-                        .rotate(270f)
-                ) {
-                    MiniPlayerPanel(vm, state, participants[3], isFinished, Modifier.fillMaxSize())
-                }
+                // Unten-Links (0°)
+                PlayerCell(vm, state, p[0], isFinished, 0f,
+                    Modifier.size(halfW, halfH).align(Alignment.BottomStart))
+                // Unten-Rechts (270° — Spieler sitzt rechts)
+                PlayerCell(vm, state, p[1], isFinished, 270f,
+                    Modifier.size(halfW, halfH).align(Alignment.BottomEnd))
+                // Oben-Links (90° — Spieler sitzt links)
+                PlayerCell(vm, state, p[2], isFinished, 90f,
+                    Modifier.size(halfW, halfH).align(Alignment.TopStart))
+                // Oben-Rechts (180°)
+                PlayerCell(vm, state, p[3], isFinished, 180f,
+                    Modifier.size(halfW, halfH).align(Alignment.TopEnd))
             }
             3 -> {
-                // Top (rotiert 180°)
-                Box(
-                    modifier = Modifier.fillMaxWidth().fillMaxHeight(0.5f).align(Alignment.TopCenter)
-                        .rotate(180f)
-                ) {
-                    MiniPlayerPanel(vm, state, participants[1], isFinished, Modifier.fillMaxSize())
-                }
-                // Bottom-Left
-                Box(
-                    modifier = Modifier.fillMaxWidth(0.5f).fillMaxHeight(0.5f).align(Alignment.BottomStart)
-                ) {
-                    MiniPlayerPanel(vm, state, participants[0], isFinished, Modifier.fillMaxSize())
-                }
-                // Bottom-Right
-                Box(
-                    modifier = Modifier.fillMaxWidth(0.5f).fillMaxHeight(0.5f).align(Alignment.BottomEnd)
-                ) {
-                    MiniPlayerPanel(vm, state, participants[2], isFinished, Modifier.fillMaxSize())
-                }
+                // Unten-Links (0°)
+                PlayerCell(vm, state, p[0], isFinished, 0f,
+                    Modifier.size(halfW, halfH).align(Alignment.BottomStart))
+                // Unten-Rechts (0°)
+                PlayerCell(vm, state, p[1], isFinished, 0f,
+                    Modifier.size(halfW, halfH).align(Alignment.BottomEnd))
+                // Oben-Mitte (180°)
+                PlayerCell(vm, state, p[2], isFinished, 180f,
+                    Modifier.fillMaxWidth().height(halfH).align(Alignment.TopCenter))
             }
         }
+
         // Mittiger Aktionsbereich
-        CenterActions(vm = vm, state = state, isFinished = isFinished, onBack = onBack,
-            modifier = Modifier.size(120.dp).align(Alignment.Center))
+        val centerSize = minOf(halfW, halfH) * 0.55f
+        CenterActions(
+            vm = vm, state = state, isFinished = isFinished, onBack = onBack,
+            modifier = Modifier.size(centerSize).align(Alignment.Center)
+        )
+    }
+}
+
+@Composable
+private fun PlayerCell(
+    vm: ActiveGameViewModel,
+    state: ActiveGameUiState,
+    pState: ParticipantUiState,
+    isFinished: Boolean,
+    rotation: Float,
+    modifier: Modifier
+) {
+    Box(modifier = modifier.clip(RoundedCornerShape(4.dp))) {
+        Box(modifier = Modifier.fillMaxSize().rotate(rotation)) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                MiniPlayerPanel(
+                    vm = vm, state = state, pState = pState,
+                    isFinished = isFinished,
+                    cellW = maxWidth, cellH = maxHeight
+                )
+            }
+        }
     }
 }
 
 @Composable
 private fun MiniPlayerPanel(
     vm: ActiveGameViewModel,
-    state: com.mtg.commander.ui.viewmodel.ActiveGameUiState,
+    state: ActiveGameUiState,
     pState: ParticipantUiState,
     isFinished: Boolean,
-    modifier: Modifier = Modifier
+    cellW: Dp,
+    cellH: Dp
 ) {
     val p = pState.participant
     val isWinner = p.placement == 1
+    val isRandom = state.randomOpponentId == p.id
+
+    val lifeSize = (cellH.value * 0.13f).coerceIn(20f, 52f).sp
+    val nameSize = (cellH.value * 0.055f).coerceIn(9f, 16f).sp
+    val smallSize = (cellH.value * 0.038f).coerceIn(7f, 12f).sp
+    val btnSize = (cellH.value * 0.09f).coerceIn(20f, 40f).dp
+
     val bgColor = when {
         isWinner -> WinnerColor.copy(alpha = 0.18f)
         p.isEliminated -> EliminatedColor.copy(alpha = 0.12f)
+        isRandom -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
         else -> MaterialTheme.colorScheme.surface
+    }
+    val border = when {
+        isWinner -> BorderStroke(2.dp, WinnerColor)
+        isRandom -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        else -> null
     }
 
     Surface(
-        modifier = modifier.padding(2.dp),
+        modifier = Modifier.fillMaxSize().padding(2.dp),
         shape = RoundedCornerShape(8.dp),
         color = bgColor,
-        border = if (isWinner) BorderStroke(2.dp, WinnerColor)
-                 else if (state.randomOpponentId == p.id) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-                 else null
+        border = border
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(8.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceEvenly
         ) {
             // Name + Status
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                if (isWinner) Text("★ ", color = WinnerColor, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()) {
+                if (isWinner) Text("★ ", color = WinnerColor, fontWeight = FontWeight.Bold, fontSize = nameSize)
                 if (state.startingPlayerId == p.id && !p.isEliminated)
-                    Text("▶ ", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
-                Text(
-                    pState.player.name,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    color = if (p.isEliminated) EliminatedColor else MaterialTheme.colorScheme.onSurface
-                )
+                    Text("▶ ", color = MaterialTheme.colorScheme.primary, fontSize = smallSize)
+                Text(pState.player.name, fontWeight = FontWeight.Bold, fontSize = nameSize,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (p.isEliminated) EliminatedColor else MaterialTheme.colorScheme.onSurface)
+                pState.deck?.let { d ->
+                    Text(" · ${d.commanderName}", fontSize = smallSize,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
 
             // Lebenspunkte
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center) {
                 if (!p.isEliminated && !isFinished) {
-                    SmallCounterBtn("-5") { vm.updateLife(p.id, -5) }
-                    SmallCounterBtn("-1") { vm.updateLife(p.id, -1) }
+                    MiniBtn("-5", btnSize, smallSize) { vm.updateLife(p.id, -5) }
+                    MiniBtn("-1", btnSize, smallSize) { vm.updateLife(p.id, -1) }
                 }
                 Text(
                     "${p.currentLife}",
-                    fontSize = 36.sp,
+                    fontSize = lifeSize,
                     fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 4.dp),
                     color = when {
                         p.currentLife <= 0 -> MaterialTheme.colorScheme.error
-                        p.currentLife <= 10 -> MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                        p.currentLife <= 10 -> MaterialTheme.colorScheme.error.copy(alpha = 0.75f)
                         else -> MaterialTheme.colorScheme.onSurface
-                    },
-                    modifier = Modifier.padding(horizontal = 4.dp)
+                    }
                 )
                 if (!p.isEliminated && !isFinished) {
-                    SmallCounterBtn("+1") { vm.updateLife(p.id, +1) }
-                    SmallCounterBtn("+5") { vm.updateLife(p.id, +5) }
+                    MiniBtn("+1", btnSize, smallSize) { vm.updateLife(p.id, +1) }
+                    MiniBtn("+5", btnSize, smallSize) { vm.updateLife(p.id, +5) }
                 }
             }
 
-            // Counter-Reihe: Gift / Optional / CMDSchaden-Summe
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                // Gift
-                CounterChip(
-                    label = "Gift",
-                    value = pState.poisonCounters,
-                    warn = pState.poisonCounters >= 10,
-                    onMinus = if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, -1) }) else null,
-                    onPlus = if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, +1) }) else null
-                )
-                // Optionaler Counter
-                CounterChip(
-                    label = state.optionalCounterLabel,
-                    value = pState.optionalCounter,
-                    warn = false,
-                    onMinus = if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, -1) }) else null,
-                    onPlus = if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, +1) }) else null
-                )
-            }
-
-            // Commander-Schaden empfangen
-            val totalCmdDmg = pState.commanderDamageReceived.values.sum()
-            if (totalCmdDmg > 0 || pState.commanderDamageReceived.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Shield, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("CMD: $totalCmdDmg", fontSize = 11.sp,
-                        color = if (totalCmdDmg >= 21) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            // Counters: Gift / Optional / CMD
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                InlineCounter("Gift", pState.poisonCounters, pState.poisonCounters >= 10, smallSize,
+                    if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, -1) }) else null,
+                    if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, +1) }) else null)
+                InlineCounter(state.optionalCounterLabel, pState.optionalCounter, false, smallSize,
+                    if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, -1) }) else null,
+                    if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, +1) }) else null)
+                val totalCmd = pState.commanderDamageReceived.values.sum()
+                if (totalCmd > 0) {
+                    Text("CMD:$totalCmd", fontSize = smallSize,
+                        color = if (totalCmd >= 21) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (totalCmd >= 21) FontWeight.Bold else FontWeight.Normal)
                 }
             }
 
-            // Aktionsbuttons
+            // Aktions-Buttons
             if (!p.isEliminated && !isFinished) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    SmallActionBtn("CMD") { vm.showCommanderDamagePanel(
-                        if (state.showCommanderDamageFor == p.id) null else p.id
-                    ) }
-                    SmallActionBtn("X", isRed = true) { vm.showEliminateDialog(p.id) }
+                    OutlinedButton(
+                        onClick = { vm.showCommanderDamagePanel(if (state.showCommanderDamageFor == p.id) null else p.id) },
+                        modifier = Modifier.height(btnSize),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                    ) { Text("CMD", fontSize = smallSize) }
+                    Button(
+                        onClick = { vm.showEliminateDialog(p.id) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.height(btnSize),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                    ) { Text("✕", fontSize = smallSize) }
                 }
             }
 
-            // Commander-Schaden Detail
+            // Commander-Schaden Detail (aufgeklappt)
             if (state.showCommanderDamageFor == p.id) {
-                CommanderDamageDetail(vm, state, pState, isFinished)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                state.participants.filter { it.participant.id != p.id }.forEach { att ->
+                    val dmg = pState.commanderDamageReceived[att.participant.id] ?: 0
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()) {
+                        Text(att.player.name, fontSize = smallSize, modifier = Modifier.weight(1f),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = if (dmg >= 21) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurface)
+                        Text("$dmg${if (dmg >= 21) "⚠" else ""}",
+                            fontSize = smallSize, fontWeight = FontWeight.Bold,
+                            color = if (dmg >= 21) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurface)
+                        if (!p.isEliminated && !isFinished) {
+                            MiniBtn("-", btnSize * 0.75f, smallSize) {
+                                vm.updateCommanderDamage(att.participant.id, p.id, -1)
+                            }
+                            MiniBtn("+", btnSize * 0.75f, smallSize) {
+                                vm.updateCommanderDamage(att.participant.id, p.id, +1)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -341,51 +370,57 @@ private fun MiniPlayerPanel(
 @Composable
 private fun CenterActions(
     vm: ActiveGameViewModel,
-    state: com.mtg.commander.ui.viewmodel.ActiveGameUiState,
+    state: ActiveGameUiState,
     isFinished: Boolean,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier
 ) {
     val hasWinner = state.participants.any { it.participant.placement == 1 }
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    val active = state.participants.filter { !it.participant.isEliminated }
+
+    Card(modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(4.dp)) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(4.dp),
+            modifier = Modifier.fillMaxSize().padding(2.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceEvenly
         ) {
-            IconButton(onClick = vm::rollDice, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.Casino, "Wuerfel", modifier = Modifier.size(22.dp))
+            IconButton(onClick = vm::rollDice, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Filled.Casino, "Würfel", modifier = Modifier.fillMaxSize())
             }
             IconButton(onClick = {
-                val active = state.participants.filter { !it.participant.isEliminated }
                 if (active.isNotEmpty()) vm.randomizeOpponent(active.first().participant.id)
-            }, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.Shuffle, "Zufaellig", modifier = Modifier.size(22.dp))
+            }, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Filled.Shuffle, "Zufall", modifier = Modifier.fillMaxSize())
             }
-            IconButton(onClick = vm::showOptionalCounterLabelDialog, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.Edit, "Counter benennen", modifier = Modifier.size(18.dp))
+            IconButton(onClick = vm::showOptionalCounterLabelDialog,
+                modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.Edit, "Counter", modifier = Modifier.fillMaxSize())
             }
             if (!isFinished) {
-                IconButton(onClick = { if (hasWinner) vm.showEndGameConfirm() }, modifier = Modifier.size(36.dp),
-                    enabled = hasWinner) {
-                    Icon(Icons.Filled.Stop, "Beenden", modifier = Modifier.size(18.dp),
-                        tint = if (hasWinner) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                IconButton(onClick = { if (hasWinner) vm.showEndGameConfirm() },
+                    modifier = Modifier.size(28.dp), enabled = hasWinner) {
+                    Icon(Icons.Filled.Stop, "Beenden",
+                        modifier = Modifier.fillMaxSize(),
+                        tint = if (hasWinner) MaterialTheme.colorScheme.error
+                               else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Filled.ArrowBack, "Zurueck", modifier = Modifier.size(18.dp))
+            IconButton(onClick = onBack, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.ArrowBack, "Zurück", modifier = Modifier.fillMaxSize())
             }
         }
     }
 }
 
-// ─── Scroll-Layout für 2 Spieler ────────────────────────────────────────────
+// ─── Scroll-Layout (2 Spieler) ───────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScrollLayout(
     vm: ActiveGameViewModel,
-    state: com.mtg.commander.ui.viewmodel.ActiveGameUiState,
+    state: ActiveGameUiState,
     isFinished: Boolean,
     onBack: () -> Unit
 ) {
@@ -395,29 +430,36 @@ private fun ScrollLayout(
         topBar = {
             TopAppBar(
                 title = { Text(if (isFinished) "Spiel beendet" else "Laufende Partie") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Zurueck") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Zurück") } },
                 actions = {
-                    IconButton(onClick = vm::rollDice) { Icon(Icons.Filled.Casino, "Wuerfel") }
+                    IconButton(onClick = vm::rollDice) { Icon(Icons.Filled.Casino, "Würfel") }
                     IconButton(onClick = {
                         val active = state.participants.filter { !it.participant.isEliminated }
                         if (active.isNotEmpty()) vm.randomizeOpponent(active.first().participant.id)
-                    }) { Icon(Icons.Filled.Shuffle, "Zufaellig") }
+                    }) { Icon(Icons.Filled.Shuffle, "Zufall") }
+                    IconButton(onClick = vm::showOptionalCounterLabelDialog) {
+                        Icon(Icons.Filled.Edit, "Counter")
+                    }
                     if (!isFinished) {
-                        TextButton(onClick = vm::showEndGameConfirm, enabled = hasWinner) { Text("Beenden") }
+                        TextButton(onClick = vm::showEndGameConfirm, enabled = hasWinner) {
+                            Text("Beenden")
+                        }
                     }
                 }
             )
         }
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Spacer(Modifier.height(8.dp))
             state.participants.forEach { pState ->
-                FullPlayerCard(vm, state, pState, isFinished, Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+                FullPlayerCard(vm, state, pState, isFinished)
             }
-            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -425,22 +467,23 @@ private fun ScrollLayout(
 @Composable
 private fun FullPlayerCard(
     vm: ActiveGameViewModel,
-    state: com.mtg.commander.ui.viewmodel.ActiveGameUiState,
+    state: ActiveGameUiState,
     pState: ParticipantUiState,
-    isFinished: Boolean,
-    modifier: Modifier = Modifier
+    isFinished: Boolean
 ) {
     val p = pState.participant
     val isWinner = p.placement == 1
-    val cardColor = when {
-        isWinner -> WinnerColor.copy(alpha = 0.15f)
-        p.isEliminated -> EliminatedColor.copy(alpha = 0.12f)
-        else -> MaterialTheme.colorScheme.surface
-    }
 
     Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = cardColor),
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                isWinner -> WinnerColor.copy(alpha = 0.15f)
+                p.isEliminated -> EliminatedColor.copy(alpha = 0.12f)
+                state.randomOpponentId == p.id -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                else -> MaterialTheme.colorScheme.surface
+            }
+        ),
         border = when {
             isWinner -> BorderStroke(2.dp, WinnerColor)
             state.randomOpponentId == p.id -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
@@ -448,145 +491,150 @@ private fun FullPlayerCard(
         }
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
+            // Header
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (isWinner) Text("★ SIEGER  ", color = WinnerColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                if (p.isEliminated && !isWinner) Text("ELIMINIERT (P${p.placement})  ", color = EliminatedColor, fontSize = 11.sp)
-                if (state.startingPlayerId == p.id && !p.isEliminated)
-                    Text("▶ BEGINNT  ", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp)
-                Text(pState.player.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text(pState.deck.commanderName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isWinner) Text("★ ", color = WinnerColor, fontWeight = FontWeight.Bold)
+                        if (state.startingPlayerId == p.id && !p.isEliminated)
+                            Text("▶ ", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                        Text(pState.player.name, fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium)
+                    }
+                    pState.deck?.let { d ->
+                        Text("${d.name} · ${d.commanderName}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                    } ?: Text("Ohne Deck", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (p.isEliminated) Text("Eliminiert – Platz ${p.placement}",
+                        style = MaterialTheme.typography.bodySmall, color = EliminatedColor)
+                }
             }
-            Spacer(Modifier.height(8.dp))
+
             // Leben
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Row(modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically) {
                 if (!p.isEliminated && !isFinished) {
                     LifeBtn("-5") { vm.updateLife(p.id, -5) }
                     LifeBtn("-1") { vm.updateLife(p.id, -1) }
                 }
                 Text("${p.currentLife}", fontSize = 52.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    color = if (p.currentLife <= 10) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    color = if (p.currentLife <= 10) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurface)
                 if (!p.isEliminated && !isFinished) {
                     LifeBtn("+1") { vm.updateLife(p.id, +1) }
                     LifeBtn("+5") { vm.updateLife(p.id, +5) }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+
             // Counters
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CounterChip("Gift", pState.poisonCounters, pState.poisonCounters >= 10,
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                InlineCounter("Gift", pState.poisonCounters, pState.poisonCounters >= 10, 12.sp,
                     if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, -1) }) else null,
                     if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, +1) }) else null)
-                CounterChip(state.optionalCounterLabel, pState.optionalCounter, false,
+                InlineCounter(state.optionalCounterLabel, pState.optionalCounter, false, 12.sp,
                     if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, -1) }) else null,
                     if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, +1) }) else null)
+                val totalCmd = pState.commanderDamageReceived.values.sum()
+                if (totalCmd > 0) Text("CMD: $totalCmd${if (totalCmd >= 21) " ⚠" else ""}",
+                    fontSize = 12.sp,
+                    color = if (totalCmd >= 21) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            // Commander-Schaden Übersicht
-            val totalCmdDmg = pState.commanderDamageReceived.values.sum()
-            if (totalCmdDmg > 0) {
-                Text("CMD-Schaden gesamt: $totalCmdDmg${if (totalCmdDmg >= 21) " ⚠" else ""}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (totalCmdDmg >= 21) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+
             if (!p.isEliminated && !isFinished) {
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { vm.showCommanderDamagePanel(if (state.showCommanderDamageFor == p.id) null else p.id) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Shield, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("CMD-Schaden", fontSize = 12.sp)
-                    }
-                    Button(onClick = { vm.showEliminateDialog(p.id) },
+                    OutlinedButton(
+                        onClick = { vm.showCommanderDamagePanel(if (state.showCommanderDamageFor == p.id) null else p.id) },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("CMD-Schaden") }
+                    Button(
+                        onClick = { vm.showEliminateDialog(p.id) },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Close, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Eliminieren", fontSize = 12.sp)
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Eliminieren") }
+                }
+            }
+
+            if (state.showCommanderDamageFor == p.id) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+                Text("Commander-Schaden von:",
+                    style = MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.height(4.dp))
+                state.participants.filter { it.participant.id != p.id }.forEach { att ->
+                    val dmg = pState.commanderDamageReceived[att.participant.id] ?: 0
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                        Text(att.player.name, modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (dmg >= 21) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurface)
+                        Text("$dmg${if (dmg >= 21) " ⚠" else ""}", fontWeight = FontWeight.Bold,
+                            color = if (dmg >= 21) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurface)
+                        if (!p.isEliminated && !isFinished) {
+                            LifeBtn("-") { vm.updateCommanderDamage(att.participant.id, p.id, -1) }
+                            LifeBtn("+") { vm.updateCommanderDamage(att.participant.id, p.id, +1) }
+                        }
                     }
                 }
             }
-            if (state.showCommanderDamageFor == p.id) {
-                Spacer(Modifier.height(8.dp))
-                CommanderDamageDetail(vm, state, pState, isFinished)
-            }
         }
     }
 }
 
-// ─── Gemeinsame Hilfkomponenten ──────────────────────────────────────────────
+// ─── Hilfkomponenten ─────────────────────────────────────────────────────────
 
 @Composable
-private fun CommanderDamageDetail(
-    vm: ActiveGameViewModel,
-    state: com.mtg.commander.ui.viewmodel.ActiveGameUiState,
-    pState: ParticipantUiState,
-    isFinished: Boolean
-) {
-    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-    Text("Commander-Schaden von:", style = MaterialTheme.typography.labelSmall)
-    state.participants.filter { it.participant.id != pState.participant.id }.forEach { attacker ->
-        val dmg = pState.commanderDamageReceived[attacker.participant.id] ?: 0
-        val over21 = dmg >= 21
-        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(attacker.player.name, modifier = Modifier.weight(1f), fontSize = 12.sp,
-                color = if (over21) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-            if (over21) Text("⚠ ", color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text("$dmg", fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                color = if (over21) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-            if (!pState.participant.isEliminated && !isFinished) {
-                SmallCounterBtn("-") { vm.updateCommanderDamage(attacker.participant.id, pState.participant.id, -1) }
-                SmallCounterBtn("+") { vm.updateCommanderDamage(attacker.participant.id, pState.participant.id, +1) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CounterChip(
+private fun InlineCounter(
     label: String,
     value: Int,
     warn: Boolean,
+    labelSize: androidx.compose.ui.unit.TextUnit,
     onMinus: (() -> Unit)?,
     onPlus: (() -> Unit)?
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        if (onMinus != null) SmallCounterBtn("-") { onMinus() }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("$value", fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                color = if (warn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-            Text(label, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (onMinus != null) {
+            TextButton(onClick = onMinus, modifier = Modifier.size(22.dp),
+                contentPadding = PaddingValues(0.dp)) {
+                Text("-", fontSize = labelSize, fontWeight = FontWeight.Bold)
+            }
         }
-        if (onPlus != null) SmallCounterBtn("+") { onPlus() }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("$value", fontWeight = FontWeight.Bold, fontSize = labelSize,
+                color = if (warn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+            Text(label, fontSize = (labelSize.value * 0.8f).sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (onPlus != null) {
+            TextButton(onClick = onPlus, modifier = Modifier.size(22.dp),
+                contentPadding = PaddingValues(0.dp)) {
+                Text("+", fontSize = labelSize, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 
 @Composable
-private fun SmallCounterBtn(text: String, onClick: () -> Unit) {
-    TextButton(
-        onClick = onClick,
-        modifier = Modifier.size(28.dp),
-        contentPadding = PaddingValues(0.dp)
-    ) {
-        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun SmallActionBtn(text: String, isRed: Boolean = false, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.height(28.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-        colors = if (isRed) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                 else ButtonDefaults.buttonColors()
-    ) {
-        Text(text, fontSize = 11.sp)
+private fun MiniBtn(text: String, size: Dp, textSize: androidx.compose.ui.unit.TextUnit, onClick: () -> Unit) {
+    TextButton(onClick = onClick,
+        modifier = Modifier.size(size),
+        contentPadding = PaddingValues(0.dp)) {
+        Text(text, fontSize = textSize, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun LifeBtn(text: String, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = Modifier.size(44.dp), contentPadding = PaddingValues(0.dp)) {
+    TextButton(onClick = onClick, modifier = Modifier.size(44.dp),
+        contentPadding = PaddingValues(0.dp)) {
         Text(text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -610,11 +658,11 @@ private fun EliminateDialog(
                     RadioButton(selected = selectedKillerId == null, onClick = { selectedKillerId = null })
                     Text("Unbekannt / Selbst")
                 }
-                otherParticipants.forEach { p ->
+                otherParticipants.forEach { ps ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = selectedKillerId == p.participant.id,
-                            onClick = { selectedKillerId = p.participant.id })
-                        Text(p.player.name)
+                        RadioButton(selected = selectedKillerId == ps.participant.id,
+                            onClick = { selectedKillerId = ps.participant.id })
+                        Text(ps.player.name)
                     }
                 }
             }

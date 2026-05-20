@@ -119,7 +119,8 @@ private fun PlacementCard(pState: ParticipantUiState, commanderDamageByAttacker:
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(pState.player.name, fontWeight = FontWeight.Bold)
-                Text("${pState.deck.name} | ${pState.deck.commanderName}", style = MaterialTheme.typography.bodySmall)
+                Text(pState.deck?.let { "${it.name} | ${it.commanderName}" } ?: "Ohne Deck",
+                    style = MaterialTheme.typography.bodySmall)
                 Text("Leben: ${p.currentLife} / ${p.startingLife}", style = MaterialTheme.typography.bodySmall)
                 if (commanderDamageByAttacker.isNotEmpty()) {
                     Text(

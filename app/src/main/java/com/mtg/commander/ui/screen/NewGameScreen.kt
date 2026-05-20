@@ -40,13 +40,14 @@ fun NewGameScreen(app: MTGCommanderApp, onBack: () -> Unit, onGameStarted: (Long
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             Text(
-                "Spieler auswaehlen (2-4)",
+                "Spieler auswaehlen (2–4)",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
-
             if (state.allPlayers.isEmpty()) {
-                Text("Keine Spieler gefunden. Lege zuerst Spieler an.")
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Text("Keine Spieler gefunden. Lege zuerst Spieler an.")
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
@@ -66,7 +67,6 @@ fun NewGameScreen(app: MTGCommanderApp, onBack: () -> Unit, onGameStarted: (Long
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-
             Button(
                 onClick = vm::startGame,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -95,7 +95,7 @@ private fun PlayerSelectionCard(
     selection: PlayerSelection?,
     isSelectable: Boolean,
     onToggle: () -> Unit,
-    onDeckSelected: (Deck) -> Unit
+    onDeckSelected: (Deck?) -> Unit
 ) {
     val isSelected = selection != null
     Card(
@@ -115,27 +115,27 @@ private fun PlayerSelectionCard(
                 Text(player.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             }
             if (isSelected && selection != null) {
-                if (selection.availableDecks.isEmpty()) {
-                    Text("Kein Deck vorhanden!", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                } else {
-                    Text("Deck:", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 4.dp))
-                    var expanded by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                        OutlinedTextField(
-                            value = selection.selectedDeck?.name ?: "Kein Deck",
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth(),
-                            textStyle = MaterialTheme.typography.bodySmall
+                Text("Deck (optional):", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 4.dp))
+                var expanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+                    OutlinedTextField(
+                        value = selection.selectedDeck?.name ?: "Ohne Deck",
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodySmall
+                    )
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Ohne Deck") },
+                            onClick = { onDeckSelected(null); expanded = false }
                         )
-                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            selection.availableDecks.forEach { deck ->
-                                DropdownMenuItem(
-                                    text = { Text("${deck.name} (${deck.commanderName})") },
-                                    onClick = { onDeckSelected(deck); expanded = false }
-                                )
-                            }
+                        selection.availableDecks.forEach { deck ->
+                            DropdownMenuItem(
+                                text = { Text("${deck.name} (${deck.commanderName})") },
+                                onClick = { onDeckSelected(deck); expanded = false }
+                            )
                         }
                     }
                 }

@@ -24,7 +24,7 @@ import androidx.room.PrimaryKey
             entity = DeckEntity::class,
             parentColumns = ["id"],
             childColumns = ["deckId"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [Index("gameId"), Index("playerId"), Index("deckId")]
@@ -34,7 +34,7 @@ data class GameParticipantEntity(
     val id: Long = 0,
     val gameId: Long,
     val playerId: Long,
-    val deckId: Long,
+    val deckId: Long?,
     val startingLife: Int = 40,
     val currentLife: Int = 40,
     val placement: Int? = null,
