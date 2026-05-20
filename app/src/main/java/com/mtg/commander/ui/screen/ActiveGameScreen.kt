@@ -159,20 +159,22 @@ private fun RotatingLayout(
     val halfW = W / 2
     val halfH = H / 2
     val p = state.participants
+    var centerVisible by remember { mutableStateOf(true) }
+    val centerSize = minOf(halfW, halfH) * 0.48f
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (p.size) {
             4 -> {
-                // Unten-Links (0°)
+                // Unten-Links (0° — liest normal von unten)
                 PlayerCell(vm, state, p[0], isFinished, 0f,
                     Modifier.size(halfW, halfH).align(Alignment.BottomStart))
-                // Unten-Rechts (270° — Spieler sitzt rechts)
-                PlayerCell(vm, state, p[1], isFinished, 270f,
+                // Unten-Rechts (0° — liest normal von unten)
+                PlayerCell(vm, state, p[1], isFinished, 0f,
                     Modifier.size(halfW, halfH).align(Alignment.BottomEnd))
-                // Oben-Links (90° — Spieler sitzt links)
-                PlayerCell(vm, state, p[2], isFinished, 90f,
+                // Oben-Links (180° — liest von oben, gedreht)
+                PlayerCell(vm, state, p[2], isFinished, 180f,
                     Modifier.size(halfW, halfH).align(Alignment.TopStart))
-                // Oben-Rechts (180°)
+                // Oben-Rechts (180° — liest von oben, gedreht)
                 PlayerCell(vm, state, p[3], isFinished, 180f,
                     Modifier.size(halfW, halfH).align(Alignment.TopEnd))
             }
@@ -189,12 +191,18 @@ private fun RotatingLayout(
             }
         }
 
-        // Mittiger Aktionsbereich
-        val centerSize = minOf(halfW, halfH) * 0.55f
-        CenterActions(
-            vm = vm, state = state, isFinished = isFinished, onBack = onBack,
-            modifier = Modifier.size(centerSize).align(Alignment.Center)
-        )
+        // Mittiges Menü – ein-/ausblendbar
+        Box(modifier = Modifier.align(Alignment.Center)) {
+            if (centerVisible) {
+                CenterActions(
+                    vm = vm, state = state, isFinished = isFinished, onBack = onBack,
+                    onHide = { centerVisible = false },
+                    modifier = Modifier.size(centerSize)
+                )
+            } else {
+                SmallToggleButton(onClick = { centerVisible = true })
+            }
+        }
     }
 }
 
@@ -398,6 +406,7 @@ private fun CenterActions(
     state: ActiveGameUiState,
     isFinished: Boolean,
     onBack: () -> Unit,
+    onHide: () -> Unit,
     modifier: Modifier
 ) {
     val hasWinner = state.participants.any { it.participant.placement == 1 }
@@ -411,31 +420,51 @@ private fun CenterActions(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceEvenly
         ) {
-            IconButton(onClick = vm::rollDice, modifier = Modifier.size(32.dp)) {
+            // Ausblenden-Button
+            IconButton(onClick = onHide, modifier = Modifier.size(24.dp)) {
+                Icon(Icons.Filled.VisibilityOff, "Verstecken",
+                    modifier = Modifier.fillMaxSize(),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = vm::rollDice, modifier = Modifier.size(30.dp)) {
                 Icon(Icons.Filled.Casino, "Würfel", modifier = Modifier.fillMaxSize())
             }
             IconButton(onClick = {
                 if (active.isNotEmpty()) vm.randomizeOpponent(active.first().participant.id)
-            }, modifier = Modifier.size(32.dp)) {
+            }, modifier = Modifier.size(30.dp)) {
                 Icon(Icons.Filled.Shuffle, "Zufall", modifier = Modifier.fillMaxSize())
             }
             IconButton(onClick = vm::showOptionalCounterLabelDialog,
-                modifier = Modifier.size(28.dp)) {
+                modifier = Modifier.size(26.dp)) {
                 Icon(Icons.Filled.Edit, "Counter", modifier = Modifier.fillMaxSize())
             }
             if (!isFinished) {
                 IconButton(onClick = { if (hasWinner) vm.showEndGameConfirm() },
-                    modifier = Modifier.size(28.dp), enabled = hasWinner) {
+                    modifier = Modifier.size(26.dp), enabled = hasWinner) {
                     Icon(Icons.Filled.Stop, "Beenden",
                         modifier = Modifier.fillMaxSize(),
                         tint = if (hasWinner) MaterialTheme.colorScheme.error
                                else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            IconButton(onClick = onBack, modifier = Modifier.size(28.dp)) {
+            IconButton(onClick = onBack, modifier = Modifier.size(26.dp)) {
                 Icon(Icons.Filled.ArrowBack, "Zurück", modifier = Modifier.fillMaxSize())
             }
         }
+    }
+}
+
+@Composable
+private fun SmallToggleButton(onClick: () -> Unit) {
+    FilledIconButton(
+        onClick = onClick,
+        modifier = Modifier.size(36.dp),
+        colors = IconButtonDefaults.filledIconButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+        )
+    ) {
+        Icon(Icons.Filled.Visibility, "Menü anzeigen",
+            modifier = Modifier.size(20.dp))
     }
 }
 
