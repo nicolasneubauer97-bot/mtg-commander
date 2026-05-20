@@ -79,7 +79,7 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(8.dp))
         HomeNavButton(icon = Icons.Filled.BarChart, label = "Deck-Statistiken", onClick = onDeckStats)
         Spacer(modifier = Modifier.height(8.dp))
-        HomeNavButton(icon = Icons.Filled.History, label = "Spielhistorie", onClick = onHistory)
+        // HomeNavButton(icon = Icons.Filled.History, label = "Spielhistorie", onClick = onHistory)
     }
 }
 
