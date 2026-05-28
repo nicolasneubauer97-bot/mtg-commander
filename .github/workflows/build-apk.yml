@@ -35,13 +35,14 @@ jobs:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           mkdir -p $HOME/.android
+          KEYSTORE_FILE="$HOME/.android/release.keystore"
           if [ -n "$KEYSTORE_B64" ]; then
             echo "Lade Keystore aus Secret..."
-            echo "$KEYSTORE_B64" | base64 -d > $HOME/.android/release.keystore
+            echo "$KEYSTORE_B64" | base64 -d > "$KEYSTORE_FILE"
           else
             echo "Kein Secret gefunden – generiere einmaliges Keystore."
             keytool -genkey -v \
-              -keystore $HOME/.android/release.keystore \
+              -keystore "$KEYSTORE_FILE" \
               -storepass android \
               -alias androiddebugkey \
               -keypass android \
@@ -54,12 +55,13 @@ jobs:
             echo "  Name:  KEYSTORE_BASE64"
             echo "  Wert:  (folgender Base64-String)"
             echo "================================================================"
-            base64 -w 0 $HOME/.android/release.keystore
+            base64 -w 0 "$KEYSTORE_FILE"
             echo ""
             echo "================================================================"
             echo "Danach: alte App einmalig deinstallieren, neu installieren."
             echo "================================================================"
           fi
+          echo "KEYSTORE_PATH=$KEYSTORE_FILE" >> $GITHUB_ENV
 
       - name: Build Release APK
         run: gradle assembleRelease --no-daemon --stacktrace
@@ -67,7 +69,6 @@ jobs:
           ANDROID_HOME:     /usr/local/lib/android/sdk
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
           BUILD_NUMBER:     ${{ github.run_number }}
-          KEYSTORE_PATH:    /root/.android/release.keystore
           KEYSTORE_PASS:    android
           KEY_ALIAS:        androiddebugkey
           KEY_PASS:         android
