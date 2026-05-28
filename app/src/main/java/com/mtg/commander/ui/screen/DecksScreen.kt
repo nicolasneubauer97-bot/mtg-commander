@@ -29,35 +29,26 @@ fun DecksScreen(
     val vm: DecksViewModel = viewModel(factory = DecksViewModel.factory(app))
     val state by vm.uiState.collectAsStateWithLifecycle()
 
-    // Observe precon picked from the picker screen via SavedStateHandle
-    val pickedName = backStackEntry?.savedStateHandle?.getStateFlow<String?>("picked_precon_name", null)
-        ?.collectAsState()?.value
-    val pickedCommander = backStackEntry?.savedStateHandle?.getStateFlow<String?>("picked_commander", null)
-        ?.collectAsState()?.value
-    val pickedColors = backStackEntry?.savedStateHandle?.getStateFlow<String?>("picked_colors", null)
-        ?.collectAsState()?.value
-    val pickedImageUrl = backStackEntry?.savedStateHandle?.getStateFlow<String?>("picked_image_url", null)
-        ?.collectAsState()?.value
-    val pickedPlayerId = backStackEntry?.savedStateHandle?.getStateFlow<Long?>("picked_player_id", null)
-        ?.collectAsState()?.value
-
-    LaunchedEffect(pickedName, pickedPlayerId) {
-        if (pickedName != null && pickedCommander != null && pickedPlayerId != null) {
-            val player = state.players.find { it.id == pickedPlayerId }
+    // Observe precon result passed back from PreconPickerScreen via savedStateHandle
+    val currentPlayers by rememberUpdatedState(state.players)
+    LaunchedEffect(backStackEntry) {
+        val sh = backStackEntry?.savedStateHandle ?: return@LaunchedEffect
+        sh.getStateFlow<String?>("picked_precon_name", null).collect { name ->
+            if (name == null) return@collect
+            val commander = sh.get<String>("picked_commander") ?: ""
+            val colors = sh.get<String>("picked_colors") ?: ""
+            val imageUrl = sh.get<String>("picked_image_url") ?: ""
+            val playerId = sh.get<Long>("picked_player_id") ?: return@collect
+            val player = currentPlayers.find { it.id == playerId }
             if (player != null) {
                 vm.selectPlayer(player)
-                vm.importPrecon(
-                    name = pickedName,
-                    commanderName = pickedCommander,
-                    colors = pickedColors ?: "",
-                    imageUrl = pickedImageUrl ?: ""
-                )
+                vm.importPrecon(name, commander, colors, imageUrl)
             }
-            backStackEntry.savedStateHandle.remove<String>("picked_precon_name")
-            backStackEntry.savedStateHandle.remove<String>("picked_commander")
-            backStackEntry.savedStateHandle.remove<String>("picked_colors")
-            backStackEntry.savedStateHandle.remove<String>("picked_image_url")
-            backStackEntry.savedStateHandle.remove<Long>("picked_player_id")
+            sh.remove<String>("picked_precon_name")
+            sh.remove<String>("picked_commander")
+            sh.remove<String>("picked_colors")
+            sh.remove<String>("picked_image_url")
+            sh.remove<Long>("picked_player_id")
         }
     }
 
