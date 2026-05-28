@@ -266,20 +266,21 @@ private fun MiniPlayerPanel(
     val p = pState.participant
     val isWinner = p.placement == 1
     val isRandom = state.randomOpponentId == p.id
+    val hasButtons = !p.isEliminated && !isFinished
 
-    // Proportionale Grössen – nutzt verfügbaren Platz optimal
-    val lifeFs  = (cellH.value * 0.20f).coerceIn(24f, 72f).sp
-    val nameFs  = (cellH.value * 0.07f).coerceIn(10f, 20f).sp
-    val smallFs = (cellH.value * 0.05f).coerceIn(8f, 14f).sp
-    val tinyFs  = (cellH.value * 0.04f).coerceIn(7f, 11f).sp
-    val btnH    = (cellH.value * 0.10f).coerceIn(22f, 44f).dp
-    val iconSz  = (cellH.value * 0.08f).coerceIn(16f, 32f).dp
+    // Proportionale Grössen – grosszügige Obergrenzen damit der Platz wirklich genutzt wird
+    val lifeFs  = (cellH.value * 0.22f).coerceIn(28f, 130f).sp
+    val nameFs  = (cellH.value * 0.07f).coerceIn(12f, 28f).sp
+    val smallFs = (cellH.value * 0.055f).coerceIn(9f, 18f).sp
+    val tinyFs  = (cellH.value * 0.044f).coerceIn(8f, 14f).sp
+    val btnH    = (cellH.value * 0.11f).coerceIn(26f, 64f).dp
+    val iconSz  = (cellH.value * 0.09f).coerceIn(20f, 44f).dp
 
     val bgColor = when {
-        isWinner -> WinnerColor.copy(alpha = 0.18f)
+        isWinner       -> WinnerColor.copy(alpha = 0.18f)
         p.isEliminated -> EliminatedColor.copy(alpha = 0.12f)
-        isRandom -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-        else -> MaterialTheme.colorScheme.surface
+        isRandom       -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+        else           -> MaterialTheme.colorScheme.surface
     }
 
     Surface(
@@ -293,14 +294,18 @@ private fun MiniPlayerPanel(
         }
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 3.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 6.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceEvenly
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            // Name
-            Row(horizontalArrangement = Arrangement.Center,
+            // ─── Name ─────────────────────────────────────────────────────────
+            Row(
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()) {
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 if (isWinner) Text("★ ", color = WinnerColor, fontWeight = FontWeight.Bold, fontSize = nameFs)
                 if (state.startingPlayerId == p.id && !p.isEliminated)
                     Text("▶ ", color = MaterialTheme.colorScheme.primary, fontSize = tinyFs)
@@ -314,43 +319,57 @@ private fun MiniPlayerPanel(
                 }
             }
 
-            // Lebenspunkte
-            Row(verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center) {
-                if (!p.isEliminated && !isFinished) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        MiniBtn("-10", btnH, smallFs) { vm.updateLife(p.id, -10) }
-                        MiniBtn("-5",  btnH, smallFs) { vm.updateLife(p.id, -5) }
-                        MiniBtn("-1",  btnH, smallFs) { vm.updateLife(p.id, -1) }
+            // ─── Lebenspunkte – füllt gesamten Restplatz ──────────────────────
+            Row(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                if (hasButtons) {
+                    Column(
+                        modifier = Modifier.weight(0.22f).fillMaxHeight(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        MiniBtn("-10", btnH, smallFs, Modifier.fillMaxWidth()) { vm.updateLife(p.id, -10) }
+                        MiniBtn("-5",  btnH, smallFs, Modifier.fillMaxWidth()) { vm.updateLife(p.id, -5) }
+                        MiniBtn("-1",  btnH, smallFs, Modifier.fillMaxWidth()) { vm.updateLife(p.id, -1) }
                     }
                 }
-                Text("${p.currentLife}", fontSize = lifeFs, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 6.dp),
+                Text(
+                    "${p.currentLife}",
+                    modifier = Modifier.weight(if (hasButtons) 0.56f else 1f),
+                    fontSize = lifeFs, fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
                     color = when {
                         p.currentLife <= 0  -> MaterialTheme.colorScheme.error
                         p.currentLife <= 10 -> MaterialTheme.colorScheme.error.copy(alpha = 0.75f)
-                        else -> MaterialTheme.colorScheme.onSurface
-                    })
-                if (!p.isEliminated && !isFinished) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        MiniBtn("+10", btnH, smallFs) { vm.updateLife(p.id, +10) }
-                        MiniBtn("+5",  btnH, smallFs) { vm.updateLife(p.id, +5) }
-                        MiniBtn("+1",  btnH, smallFs) { vm.updateLife(p.id, +1) }
+                        else                -> MaterialTheme.colorScheme.onSurface
+                    }
+                )
+                if (hasButtons) {
+                    Column(
+                        modifier = Modifier.weight(0.22f).fillMaxHeight(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        MiniBtn("+10", btnH, smallFs, Modifier.fillMaxWidth()) { vm.updateLife(p.id, +10) }
+                        MiniBtn("+5",  btnH, smallFs, Modifier.fillMaxWidth()) { vm.updateLife(p.id, +5) }
+                        MiniBtn("+1",  btnH, smallFs, Modifier.fillMaxWidth()) { vm.updateLife(p.id, +1) }
                     }
                 }
             }
 
-            // Counters: Gift / Bonus (mit Edit-Button pro Spieler)
+            // ─── Counters ─────────────────────────────────────────────────────
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 InlineCounter("Gift", pState.poisonCounters, pState.poisonCounters >= 10, smallFs,
-                    if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, -1) }) else null,
-                    if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, +1) }) else null)
-                // Bonus mit Umbenennen-Button
+                    if (hasButtons) ({ vm.updatePoison(p.id, -1) }) else null,
+                    if (hasButtons) ({ vm.updatePoison(p.id, +1) }) else null)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     InlineCounter(pState.optionalCounterLabel, pState.optionalCounter, false, smallFs,
-                        if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, -1) }) else null,
-                        if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, +1) }) else null)
+                        if (hasButtons) ({ vm.updateOptionalCounter(p.id, -1) }) else null,
+                        if (hasButtons) ({ vm.updateOptionalCounter(p.id, +1) }) else null)
                     if (!isFinished) {
                         IconButton(onClick = { vm.showCounterLabelDialog(p.id) },
                             modifier = Modifier.size(iconSz)) {
@@ -360,7 +379,6 @@ private fun MiniPlayerPanel(
                         }
                     }
                 }
-                // CMD-Schaden-Summe
                 val totalCmd = pState.commanderDamageReceived.values.sum()
                 if (totalCmd > 0) {
                     Text("CMD:$totalCmd${if (totalCmd >= 21) "⚠" else ""}",
@@ -370,8 +388,8 @@ private fun MiniPlayerPanel(
                 }
             }
 
-            // Aktionsbuttons
-            if (!p.isEliminated && !isFinished) {
+            // ─── Aktionsbuttons ───────────────────────────────────────────────
+            if (hasButtons) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     OutlinedButton(
                         onClick = { vm.showCommanderDamagePanel(
@@ -388,7 +406,7 @@ private fun MiniPlayerPanel(
                 }
             }
 
-            // Würfel / Randomizer (pro Spieler)
+            // ─── Würfel / Randomizer ──────────────────────────────────────────
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = vm::rollDice,
@@ -401,7 +419,7 @@ private fun MiniPlayerPanel(
                 }
             }
 
-            // CMD-Schaden-Detail (aufgeklappt)
+            // ─── CMD-Schaden-Detail ───────────────────────────────────────────
             if (state.showCommanderDamageFor == p.id) {
                 HorizontalDivider(Modifier.padding(vertical = 2.dp))
                 state.participants.filter { it.participant.id != p.id }.forEach { att ->
@@ -415,7 +433,7 @@ private fun MiniPlayerPanel(
                             fontSize = tinyFs, fontWeight = FontWeight.Bold,
                             color = if (dmg >= 21) MaterialTheme.colorScheme.error
                                     else MaterialTheme.colorScheme.onSurface)
-                        if (!p.isEliminated && !isFinished) {
+                        if (hasButtons) {
                             MiniBtn("-", btnH * 0.75f, tinyFs) {
                                 vm.updateCommanderDamage(att.participant.id, p.id, -1) }
                             MiniBtn("+", btnH * 0.75f, tinyFs) {
@@ -664,9 +682,16 @@ private fun InlineCounter(
 }
 
 @Composable
-private fun MiniBtn(text: String, h: Dp, fs: androidx.compose.ui.unit.TextUnit, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = Modifier.height(h).widthIn(min = h),
-        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp)) {
+private fun MiniBtn(
+    text: String, h: Dp, fs: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = modifier.height(h).widthIn(min = h),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+    ) {
         Text(text, fontSize = fs, fontWeight = FontWeight.Bold)
     }
 }
