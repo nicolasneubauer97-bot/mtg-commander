@@ -90,6 +90,8 @@ class GameRepository(
 
     suspend fun insertKill(kill: Kill): Long = killDao.insertKill(kill.toEntity())
 
+    suspend fun deleteKill(kill: Kill) = killDao.deleteKill(kill.toEntity())
+
     fun getKillsForGame(gameId: Long): Flow<List<Kill>> =
         killDao.getKillsForGame(gameId).map { it.map(KillEntity::toDomain) }
 

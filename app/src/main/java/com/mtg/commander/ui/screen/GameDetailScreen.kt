@@ -72,7 +72,7 @@ fun GameDetailScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
                     Text("Platzierungen", style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(bottom = 4.dp))
                 }
-                items(state.participants, key = { it.participant.id }) { pState ->
+                items(state.participants, key = { "p_${it.participant.id}" }) { pState ->
                     PlacementCard(
                         pState = pState,
                         commanderDamageByAttacker = buildCommanderDamageMap(pState, state.participants),
@@ -86,7 +86,7 @@ fun GameDetailScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
                         Text("Kills", style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                     }
-                    items(state.kills, key = { it.id }) { kill ->
+                    items(state.kills, key = { "k_${it.id}" }) { kill ->
                         val victim = state.participants.find { it.participant.id == kill.victimParticipantId }
                         val killer = state.participants.find { it.participant.id == kill.killerParticipantId }
                         Card(modifier = Modifier.fillMaxWidth()) {
@@ -117,7 +117,7 @@ fun GameDetailScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
                     }
                     items(
                         items = state.damageByAttacker.entries.toList(),
-                        key = { it.key }
+                        key = { "dmg_${it.key}" }
                     ) { (attackerId, targetMap) ->
                         val attacker = state.participants.find { it.participant.id == attackerId }
                         DamageCard(

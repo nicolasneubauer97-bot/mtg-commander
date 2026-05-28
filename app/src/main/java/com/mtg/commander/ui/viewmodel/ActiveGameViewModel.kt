@@ -39,6 +39,10 @@ data class ActiveGameUiState(
     val currentTurnParticipantId: Long? = null,
     val currentTurnNumber: Int = 0,
     val canUndo: Boolean = false,
+    // Auto-eliminate: participants already auto-triggered (don't retrigger)
+    val autoEliminateTriggered: Set<Long> = emptySet(),
+    // Undo elimination
+    val canUndoElimination: Boolean = false,
     // Dice
     val isDiceRolling: Boolean = false,
     val diceAnimValue: Int = 1,
@@ -84,6 +88,10 @@ class ActiveGameViewModel(
     private var isFirstLoad = true
     private val pendingLifeDeltas = mutableMapOf<Long, Int>()
     private val turnHistory = ArrayDeque<TurnHistoryEntry>()
+
+    // Elimination undo: (victimParticipantId, lifeAtElimination, killId)
+    private data class EliminationRecord(val victimId: Long, val lifeAtElim: Int, val killId: Long?)
+    private val eliminationHistory = ArrayDeque<EliminationRecord>()
 
     init { loadGame() }
 
@@ -134,6 +142,9 @@ class ActiveGameViewModel(
                     else -> cur.showVictoryFor
                 }
 
+                // Read UI-only state from CURRENT value (not stale cur) to avoid race conditions
+                val latestUi = _uiState.value
+
                 val (crown, trash) = computeCrownTrash(participantUiStates, emptyMap())
                 _uiState.value = cur.copy(
                     game = game, participants = participantUiStates,
@@ -142,8 +153,17 @@ class ActiveGameViewModel(
                     showStartDialog = if (showStart) true else cur.showStartDialog,
                     currentTurnParticipantId = currentTurn,
                     crownPlayerId = crown, trashPlayerId = trash,
-                    showVictoryFor = autoVictory
+                    showVictoryFor = autoVictory,
+                    // Preserve transient UI state from the LATEST version (not stale cur)
+                    showEliminateDialogFor = latestUi.showEliminateDialogFor,
+                    showEndGameConfirm = latestUi.showEndGameConfirm,
+                    showCounterLabelDialogFor = latestUi.showCounterLabelDialogFor,
+                    canUndo = latestUi.canUndo,
+                    autoEliminateTriggered = latestUi.autoEliminateTriggered
                 )
+
+                // Auto-eliminate if thresholds crossed
+                checkAutoEliminate()
             }
         }
         viewModelScope.launch { refreshLeaderboardRanks() }
@@ -185,8 +205,8 @@ class ActiveGameViewModel(
                 ?.participant ?: return@launch
             gameRepository.updateParticipant(p.copy(currentLife = p.currentLife + delta))
         }
-        // Buffer for end-of-turn commit (written on nextPlayer)
         pendingLifeDeltas[participantId] = (pendingLifeDeltas[participantId] ?: 0) + delta
+        // Check auto-eliminate after life update (runs after next recomposition via loadGame)
     }
 
     fun updatePoison(participantId: Long, delta: Int) {
@@ -199,6 +219,7 @@ class ActiveGameViewModel(
                 if (p.participant.id == participantId) p.copy(poisonCounters = newVal) else p
             }
         )
+        checkAutoEliminate()
     }
 
     fun updateOptionalCounter(participantId: Long, delta: Int) {
@@ -242,6 +263,7 @@ class ActiveGameViewModel(
         viewModelScope.launch {
             gameRepository.updateCommanderDamage(gameId, attackerId, targetId, delta)
         }
+        // Commander damage is in the DB-reactive state; checkAutoEliminate runs in loadGame()
     }
 
     // ─── Turn tracking ────────────────────────────────────────────────────────
@@ -374,6 +396,34 @@ class ActiveGameViewModel(
         }
     }
 
+    // ─── Auto-Eliminate ───────────────────────────────────────────────────────
+
+    private fun checkAutoEliminate() {
+        val state = _uiState.value
+        if (state.game?.isFinished == true) return
+        if (state.showEliminateDialogFor != null) return  // dialog already open
+
+        for (pState in state.participants) {
+            val p = pState.participant
+            if (p.isEliminated) continue
+            if (p.id in state.autoEliminateTriggered) continue
+
+            val totalCmd = pState.commanderDamageReceived.values.sum()
+            val triggers = buildList {
+                if (p.currentLife <= 0) add("0 oder weniger Leben (${p.currentLife})")
+                if (pState.poisonCounters >= 10) add("10 Giftmarken")
+                if (totalCmd >= 21) add("21 Commander-Schaden")
+            }
+            if (triggers.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    showEliminateDialogFor = p.id,
+                    autoEliminateTriggered = state.autoEliminateTriggered + p.id
+                )
+                return
+            }
+        }
+    }
+
     // ─── Eliminate ───────────────────────────────────────────────────────────
 
     fun showEliminateDialog(participantId: Long) {
@@ -390,11 +440,12 @@ class ActiveGameViewModel(
             val active = all.filter { !it.isEliminated }
             val placement = active.size
             val victim = active.find { it.id == victimId } ?: return@launch
+            val lifeAtElim = victim.currentLife
             gameRepository.updateParticipant(
                 victim.copy(isEliminated = true, placement = placement,
                     eliminatedAt = System.currentTimeMillis())
             )
-            gameRepository.insertKill(Kill(gameId = gameId,
+            val killId = gameRepository.insertKill(Kill(gameId = gameId,
                 killerParticipantId = killerId, victimParticipantId = victimId))
             val remaining = active.filter { it.id != victimId }
             val winner = if (remaining.size == 1) remaining.first() else null
@@ -404,10 +455,41 @@ class ActiveGameViewModel(
                 gameRepository.updateGame(game.copy(
                     status = "FINISHED", endedAt = System.currentTimeMillis()))
             }
+            // Track for undo (only for non-final eliminations)
+            if (winner == null) {
+                eliminationHistory.addLast(EliminationRecord(victimId, lifeAtElim, killId))
+            }
             // Advance turn if eliminated player was active (only when game continues)
             if (_uiState.value.currentTurnParticipantId == victimId && winner == null) nextPlayer()
-            // showVictoryFor is set reactively in loadGame() when game.isFinished == true
-            _uiState.value = _uiState.value.copy(showEliminateDialogFor = null)
+            _uiState.value = _uiState.value.copy(
+                showEliminateDialogFor = null,
+                canUndoElimination = eliminationHistory.isNotEmpty()
+            )
+        }
+    }
+
+    fun undoElimination() {
+        if (eliminationHistory.isEmpty()) return
+        val record = eliminationHistory.removeLast()
+        viewModelScope.launch {
+            // Restore victim
+            val all = gameRepository.getParticipantsForGameSync(gameId)
+            val victim = all.find { it.id == record.victimId } ?: return@launch
+            gameRepository.updateParticipant(
+                victim.copy(isEliminated = false, placement = null,
+                    eliminatedAt = null, currentLife = record.lifeAtElim)
+            )
+            // Remove kill record
+            if (record.killId != null) {
+                val kill = _uiState.value.kills.find { it.id == record.killId }
+                if (kill != null) gameRepository.deleteKill(kill)
+            }
+            // Re-enable auto-trigger for this player (allow re-detection)
+            val triggered = _uiState.value.autoEliminateTriggered - record.victimId
+            _uiState.value = _uiState.value.copy(
+                canUndoElimination = eliminationHistory.isNotEmpty(),
+                autoEliminateTriggered = triggered
+            )
         }
     }
 

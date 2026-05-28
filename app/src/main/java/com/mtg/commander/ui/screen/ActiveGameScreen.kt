@@ -106,7 +106,8 @@ fun ActiveGameScreen(
     }
 
     // ─── Dialoge ─────────────────────────────────────────────────────────────
-    if (state.showEliminateDialogFor != null) {
+    // Hide eliminate dialog when victory overlay is showing
+    if (state.showEliminateDialogFor != null && state.showVictoryFor == null) {
         val victim = state.participants.find { it.participant.id == state.showEliminateDialogFor }
         if (victim != null) {
             EliminateDialog(
@@ -801,6 +802,12 @@ private fun CenterActions(
                     Icon(Icons.Filled.Stop, "Beenden", Modifier.fillMaxSize(),
                         tint = if (hasWinner) MaterialTheme.colorScheme.error
                                else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (state.canUndoElimination && !isFinished) {
+                IconButton(onClick = vm::undoElimination, Modifier.size(28.dp)) {
+                    Icon(Icons.Filled.Undo, "Eliminierung zurück", Modifier.fillMaxSize(),
+                        tint = MaterialTheme.colorScheme.secondary)
                 }
             }
             IconButton(onClick = onBack, Modifier.size(28.dp)) {
