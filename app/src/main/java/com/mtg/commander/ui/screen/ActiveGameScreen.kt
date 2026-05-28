@@ -286,9 +286,10 @@ private fun MiniPlayerPanel(
         modifier = Modifier.fillMaxSize().padding(2.dp),
         shape = RoundedCornerShape(8.dp), color = bgColor,
         border = when {
-            isWinner -> BorderStroke(2.dp, WinnerColor)
-            isRandom -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-            else -> null
+            isWinner       -> BorderStroke(2.dp, WinnerColor)
+            p.isEliminated -> BorderStroke(1.dp, EliminatedColor.copy(alpha = 0.35f))
+            isRandom       -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+            else           -> BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f))
         }
     ) {
         Column(
@@ -436,7 +437,8 @@ private fun CenterActions(
     val hasWinner = state.participants.any { it.participant.placement == 1 }
     Card(modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(4.dp)) {
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+        elevation = CardDefaults.cardElevation(6.dp)) {
         Column(
             Modifier.fillMaxSize().padding(2.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

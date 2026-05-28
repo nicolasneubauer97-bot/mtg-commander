@@ -11,8 +11,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mtg.commander.MTGCommanderApp
@@ -73,14 +75,31 @@ fun LeaderboardScreen(app: MTGCommanderApp, onBack: () -> Unit) {
     }
 }
 
+private val RankSilver = Color(0xFFB0B8C8)
+private val RankBronze = Color(0xFFB87333)
+
 @Composable
 private fun LeaderboardCard(rank: Int, stats: PlayerStats) {
-    val isFirst = rank == 1
+    val rankColor = when (rank) {
+        1    -> WinnerColor
+        2    -> RankSilver
+        3    -> RankBronze
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val cardColor = when (rank) {
+        1    -> WinnerColor.copy(alpha = 0.13f)
+        2    -> RankSilver.copy(alpha = 0.07f)
+        3    -> RankBronze.copy(alpha = 0.07f)
+        else -> MaterialTheme.colorScheme.surface
+    }
+    val borderAlpha = when (rank) { 1 -> 0.5f; 2 -> 0.3f; 3 -> 0.25f; else -> 0.0f }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isFirst) WinnerColor.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
-        )
+        colors   = CardDefaults.cardColors(containerColor = cardColor),
+        border   = if (rank <= 3)
+            androidx.compose.foundation.BorderStroke(1.dp, rankColor.copy(alpha = borderAlpha))
+        else null
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -88,21 +107,25 @@ private fun LeaderboardCard(rank: Int, stats: PlayerStats) {
         ) {
             Text(
                 "#$rank",
-                fontWeight = FontWeight.Bold,
-                color = if (isFirst) WinnerColor else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.width(32.dp)
+                fontWeight = if (rank <= 3) FontWeight.ExtraBold else FontWeight.Bold,
+                fontSize   = if (rank == 1) 20.sp else 16.sp,
+                color      = rankColor,
+                modifier   = Modifier.width(38.dp)
             )
             Column(modifier = Modifier.weight(1f)) {
-                Text(stats.playerName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                Text(stats.playerName, fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (rank == 1) WinnerColor else MaterialTheme.colorScheme.onSurface)
+                Spacer(Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    StatChip("Siege", "${stats.wins}")
-                    StatChip("WR", "${String.format("%.0f", stats.winRate * 100)}%")
+                    StatChip("Siege",  "${stats.wins}")
+                    StatChip("WR",     "${String.format("%.0f", stats.winRate * 100)}%")
                     StatChip("Spiele", "${stats.gamesPlayed}")
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    StatChip("Platz", String.format("%.1f", stats.averagePlacement))
-                    StatChip("Kills", "${stats.kills}")
-                    StatChip("Tode", "${stats.deaths}")
+                    StatChip("Platz",  String.format("%.1f", stats.averagePlacement))
+                    StatChip("Kills",  "${stats.kills}")
+                    StatChip("Tode",   "${stats.deaths}")
                 }
             }
         }
