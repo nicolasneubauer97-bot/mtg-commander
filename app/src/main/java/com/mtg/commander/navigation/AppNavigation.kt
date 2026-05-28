@@ -82,7 +82,12 @@ fun AppNavigation(navController: NavHostController) {
             ActiveGameScreen(
                 gameId = gameId,
                 app = app,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToDetail = { gid ->
+                    navController.navigate(Screen.GameDetail.createRoute(gid)) {
+                        popUpTo(Screen.Home.route)
+                    }
+                }
             )
         }
         composable(Screen.Leaderboard.route) {

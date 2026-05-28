@@ -125,7 +125,9 @@ fun NewGameScreen(app: MTGCommanderApp, onBack: () -> Unit, onGameStarted: (Long
         SeatOrderDialog(
             selectedPlayers = state.selectedPlayers,
             seatAssignments = state.seatAssignments,
+            clockwise = state.clockwiseTurns,
             onAssign = { seat, sel -> vm.assignSeat(seat, sel) },
+            onClockwiseChange = { vm.setClockwiseTurns(it) },
             onDismiss = vm::dismissSeatDialog
         )
     }
@@ -143,7 +145,9 @@ fun NewGameScreen(app: MTGCommanderApp, onBack: () -> Unit, onGameStarted: (Long
 private fun SeatOrderDialog(
     selectedPlayers: List<PlayerSelection>,
     seatAssignments: List<PlayerSelection?>,
+    clockwise: Boolean,
     onAssign: (Int, PlayerSelection?) -> Unit,
+    onClockwiseChange: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val count = selectedPlayers.size
@@ -158,6 +162,21 @@ private fun SeatOrderDialog(
         title = { Text("Sitzordnung festlegen") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Zugrichtung auswählen
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Zugreihenfolge:", style = MaterialTheme.typography.bodySmall)
+                    FilterChip(
+                        selected = clockwise,
+                        onClick = { onClockwiseChange(true) },
+                        label = { Text("↻ Uhrzeigersinn") }
+                    )
+                    FilterChip(
+                        selected = !clockwise,
+                        onClick = { onClockwiseChange(false) },
+                        label = { Text("↺ Gegenuhrzeigersinn") }
+                    )
+                }
                 Text("Weise jedem Sitzplatz einen Spieler zu:",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -38,28 +38,36 @@ data class ActiveGameUiState(
     // Turn tracking
     val currentTurnParticipantId: Long? = null,
     val currentTurnNumber: Int = 0,
+    val canUndo: Boolean = false,
     // Dice
     val isDiceRolling: Boolean = false,
     val diceAnimValue: Int = 1,
     val diceResult: Int? = null,
-    // Randomizer with slot-machine animation
+    // Randomizer
     val randomOpponentId: Long? = null,
     val isRandomizing: Boolean = false,
     val randomizingDisplayName: String = "",
-    // Optional counter labels
+    // Optional counters
     val optionalCounterLabels: Map<Long, String> = emptyMap(),
     val showCounterLabelDialogFor: Long? = null,
     val poisonCounters: Map<Long, Int> = emptyMap(),
     val optionalCounters: Map<Long, Int> = emptyMap(),
-    // Crown/Trash leaderboard badges
+    // Crown/Trash
     val crownPlayerId: Long? = null,
     val trashPlayerId: Long? = null,
-    // Per-player panel color theme (0–4)
-    val playerThemes: Map<Long, Int> = emptyMap()
+    // Per-player color theme
+    val playerThemes: Map<Long, Int> = emptyMap(),
+    // Victory overlay
+    val showVictoryFor: Long? = null
 ) {
     val currentTurnPlayer: ParticipantUiState? get() =
         participants.find { it.participant.id == currentTurnParticipantId }
 }
+
+private data class TurnHistoryEntry(
+    val playerId: Long,
+    val committedDeltas: Map<Long, Int>  // participantId → delta that was written to life_change_events
+)
 
 class ActiveGameViewModel(
     private val gameId: Long,
@@ -73,6 +81,8 @@ class ActiveGameViewModel(
     val uiState: StateFlow<ActiveGameUiState> = _uiState.asStateFlow()
 
     private var isFirstLoad = true
+    private val pendingLifeDeltas = mutableMapOf<Long, Int>()
+    private val turnHistory = ArrayDeque<TurnHistoryEntry>()
 
     init { loadGame() }
 
@@ -165,15 +175,9 @@ class ActiveGameViewModel(
             val p = _uiState.value.participants.find { it.participant.id == participantId }
                 ?.participant ?: return@launch
             gameRepository.updateParticipant(p.copy(currentLife = p.currentLife + delta))
-            // Log life change event
-            gameRepository.logLifeChange(
-                gameId = gameId,
-                targetParticipantId = participantId,
-                activeTurnParticipantId = _uiState.value.currentTurnParticipantId,
-                delta = delta,
-                turnNumber = _uiState.value.currentTurnNumber
-            )
         }
+        // Buffer for end-of-turn commit (written on nextPlayer)
+        pendingLifeDeltas[participantId] = (pendingLifeDeltas[participantId] ?: 0) + delta
     }
 
     fun updatePoison(participantId: Long, delta: Int) {
@@ -231,46 +235,113 @@ class ActiveGameViewModel(
         }
     }
 
-    // ─── Turn tracking (clockwise: bottom-left → bottom-right → top-right → top-left)
+    // ─── Turn tracking ────────────────────────────────────────────────────────
 
-    fun nextPlayer() {
-        val state = _uiState.value
-        val all = state.participants
+    private fun buildTurnOrder(all: List<ParticipantUiState>, clockwise: Boolean): List<Int> {
         val count = all.size
-
-        // Clockwise seat order based on layout positions
-        val clockwiseIndices = when (count) {
+        val base = when (count) {
             4 -> listOf(0, 1, 3, 2)
             3 -> listOf(0, 1, 2)
             else -> listOf(0, 1)
         }.filter { it < count }
+        return if (clockwise) base else base.reversed()
+    }
+
+    fun nextPlayer() {
+        val state = _uiState.value
+        val all = state.participants
+        val clockwise = state.game?.turnClockwise ?: true
+        val order = buildTurnOrder(all, clockwise)
 
         val newTurnNumber = state.currentTurnNumber + 1
         val currentId = state.currentTurnParticipantId
 
         val currentPos = if (currentId == null) -1
-            else clockwiseIndices.indexOfFirst { all.getOrNull(it)?.participant?.id == currentId }
+            else order.indexOfFirst { all.getOrNull(it)?.participant?.id == currentId }
 
-        var nextPos = currentPos
-        for (i in 1..clockwiseIndices.size) {
-            val candidate = (currentPos + i).let { if (currentPos < 0) i - 1 else it } % clockwiseIndices.size
-            val p = all.getOrNull(clockwiseIndices[candidate]) ?: continue
-            if (!p.participant.isEliminated) {
-                nextPos = candidate
-                break
+        var nextPos = -1
+        for (i in 1..order.size) {
+            val candidate = ((if (currentPos < 0) 0 else currentPos) + i) % order.size
+            val p = all.getOrNull(order[candidate]) ?: continue
+            if (!p.participant.isEliminated) { nextPos = candidate; break }
+        }
+        if (nextPos < 0) return
+        val nextId = all.getOrNull(order[nextPos])?.participant?.id ?: return
+
+        // Commit buffered life changes as LifeChangeEvents
+        val committed = pendingLifeDeltas.toMap()
+        if (committed.isNotEmpty()) {
+            viewModelScope.launch {
+                committed.forEach { (pid, delta) ->
+                    if (delta != 0) {
+                        gameRepository.logLifeChange(
+                            gameId = gameId, targetParticipantId = pid,
+                            activeTurnParticipantId = currentId,
+                            delta = delta, turnNumber = state.currentTurnNumber
+                        )
+                    }
+                }
             }
         }
-
-        if (nextPos < 0) return
-        val nextId = all.getOrNull(clockwiseIndices[nextPos])?.participant?.id ?: return
+        // Push to undo history
+        if (currentId != null) {
+            turnHistory.addLast(TurnHistoryEntry(currentId, committed))
+        }
+        pendingLifeDeltas.clear()
 
         _uiState.value = state.copy(
             currentTurnParticipantId = nextId,
-            currentTurnNumber = newTurnNumber
+            currentTurnNumber = newTurnNumber,
+            canUndo = turnHistory.isNotEmpty()
         )
         viewModelScope.launch {
             gameRepository.setCurrentTurnParticipant(gameId, nextId)
+            refreshLeaderboardRanks()
         }
+    }
+
+    fun previousPlayer() {
+        val state = _uiState.value
+
+        // First: undo any pending changes from the CURRENT turn
+        if (pendingLifeDeltas.isNotEmpty()) {
+            val toReverse = pendingLifeDeltas.toMap()
+            pendingLifeDeltas.clear()
+            viewModelScope.launch {
+                toReverse.forEach { (pid, delta) ->
+                    if (delta != 0) {
+                        val p = _uiState.value.participants.find { it.participant.id == pid }
+                            ?.participant ?: return@forEach
+                        gameRepository.updateParticipant(p.copy(currentLife = p.currentLife - delta))
+                    }
+                }
+            }
+        }
+
+        if (turnHistory.isEmpty()) return
+        val entry = turnHistory.removeLast()
+
+        // Reverse committed changes from the previous turn
+        viewModelScope.launch {
+            entry.committedDeltas.forEach { (pid, delta) ->
+                if (delta != 0) {
+                    val p = _uiState.value.participants.find { it.participant.id == pid }
+                        ?.participant ?: return@forEach
+                    gameRepository.updateParticipant(p.copy(currentLife = p.currentLife - delta))
+                }
+            }
+            gameRepository.setCurrentTurnParticipant(gameId, entry.playerId)
+        }
+
+        _uiState.value = state.copy(
+            currentTurnParticipantId = entry.playerId,
+            currentTurnNumber = (state.currentTurnNumber - 1).coerceAtLeast(0),
+            canUndo = turnHistory.isNotEmpty()
+        )
+    }
+
+    fun dismissVictory() {
+        _uiState.value = _uiState.value.copy(showVictoryFor = null)
     }
 
     fun cyclePlayerTheme(participantId: Long) {
@@ -316,15 +387,19 @@ class ActiveGameViewModel(
             gameRepository.insertKill(Kill(gameId = gameId,
                 killerParticipantId = killerId, victimParticipantId = victimId))
             val remaining = active.filter { it.id != victimId }
-            if (remaining.size == 1) {
-                gameRepository.updateParticipant(remaining.first().copy(placement = 1))
+            val winner = if (remaining.size == 1) remaining.first() else null
+            if (winner != null) {
+                gameRepository.updateParticipant(winner.copy(placement = 1))
                 val game = gameRepository.getGameById(gameId)!!
                 gameRepository.updateGame(game.copy(
                     status = "FINISHED", endedAt = System.currentTimeMillis()))
             }
-            // If the eliminated player was the current turn player, advance to next
-            if (_uiState.value.currentTurnParticipantId == victimId) nextPlayer()
-            _uiState.value = _uiState.value.copy(showEliminateDialogFor = null)
+            // Advance turn if eliminated player was active
+            if (_uiState.value.currentTurnParticipantId == victimId && winner == null) nextPlayer()
+            _uiState.value = _uiState.value.copy(
+                showEliminateDialogFor = null,
+                showVictoryFor = winner?.id
+            )
         }
     }
 

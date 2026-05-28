@@ -29,46 +29,70 @@ fun GameHistoryScreen(
     val vm: GameHistoryViewModel = viewModel(factory = GameHistoryViewModel.factory(app))
     val state by vm.uiState.collectAsStateWithLifecycle()
 
+    // Hoist delete confirmation outside LazyColumn to prevent scroll crashes
+    var deleteTarget by remember { mutableStateOf<Game?>(null) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Spielhistorie") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Zurueck") }
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Zurück") }
                 }
             )
         }
     ) { padding ->
-        if (state.isLoading) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+        when {
+            state.isLoading -> {
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
             }
-        } else if (state.games.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Noch keine abgeschlossenen Spiele.")
+            state.games.isEmpty() -> {
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    Text("Noch keine abgeschlossenen Spiele.")
+                }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(state.games, key = { it.id }) { game ->
-                    GameHistoryCard(
-                        game = game,
-                        onClick = { onGameDetail(game.id) },
-                        onDelete = { vm.deleteGame(game) }
-                    )
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(state.games, key = { it.id }) { game ->
+                        GameHistoryCard(
+                            game = game,
+                            onClick = { onGameDetail(game.id) },
+                            onDeleteRequest = { deleteTarget = game }
+                        )
+                    }
                 }
             }
         }
     }
+
+    // Delete confirm dialog – outside LazyColumn
+    deleteTarget?.let { game ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Spiel löschen?") },
+            text = { Text("Dieses Spiel und alle zugehörigen Daten werden gelöscht.") },
+            confirmButton = {
+                TextButton(onClick = { vm.deleteGame(game); deleteTarget = null }) {
+                    Text("Löschen", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("Abbrechen") }
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GameHistoryCard(game: Game, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun GameHistoryCard(game: Game, onClick: () -> Unit, onDeleteRequest: () -> Unit) {
     val fmt = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY)
-    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -80,28 +104,13 @@ private fun GameHistoryCard(game: Game, onClick: () -> Unit, onDelete: () -> Uni
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(fmt.format(Date(game.startedAt)), style = MaterialTheme.typography.bodyLarge)
-                if (game.endedAt != null) {
-                    Text("Beendet: ${fmt.format(Date(game.endedAt))}", style = MaterialTheme.typography.bodySmall)
-                }
-                Text("Spiel #${game.id}", style = MaterialTheme.typography.labelSmall)
+                game.endedAt?.let { Text("Beendet: ${fmt.format(Date(it))}", style = MaterialTheme.typography.bodySmall) }
+                Text("Spiel #${game.id}", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { showDeleteConfirm = true }) {
-                Icon(Icons.Filled.Delete, "Loeschen", tint = MaterialTheme.colorScheme.error)
+            IconButton(onClick = onDeleteRequest) {
+                Icon(Icons.Filled.Delete, "Löschen", tint = MaterialTheme.colorScheme.error)
             }
         }
-    }
-
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Spiel loeschen?") },
-            text = { Text("Dieses Spiel und alle zugehoerigen Daten werden geloescht.") },
-            confirmButton = {
-                TextButton(onClick = { onDelete(); showDeleteConfirm = false }) { Text("Loeschen") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("Abbrechen") }
-            }
-        )
     }
 }

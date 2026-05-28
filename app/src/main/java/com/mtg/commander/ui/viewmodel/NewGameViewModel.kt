@@ -34,10 +34,9 @@ val SEAT_LABELS_2 = listOf("Oben", "Unten")
 data class NewGameUiState(
     val allPlayers: List<Player> = emptyList(),
     val selectedPlayers: List<PlayerSelection> = emptyList(),
-    // seatAssignments: Index im finalen Spieler-Array → PlayerSelection
-    // null = noch nicht zugewiesen (automatisch)
     val seatAssignments: List<PlayerSelection?> = List(4) { null },
     val showSeatDialog: Boolean = false,
+    val clockwiseTurns: Boolean = true,
     val gameId: Long? = null,
     val error: String? = null
 )
@@ -131,9 +130,13 @@ class NewGameViewModel(
 
         viewModelScope.launch {
             val pairs = assigned.mapNotNull { it }.map { it.player.id to it.selectedDeck?.id }
-            val gameId = gameRepository.createGame(pairs)
+            val gameId = gameRepository.createGameWithDirection(pairs, _uiState.value.clockwiseTurns)
             _uiState.value = _uiState.value.copy(gameId = gameId)
         }
+    }
+
+    fun setClockwiseTurns(clockwise: Boolean) {
+        _uiState.value = _uiState.value.copy(clockwiseTurns = clockwise)
     }
 
     fun clearError() {

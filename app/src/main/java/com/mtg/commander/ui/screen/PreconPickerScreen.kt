@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.mtg.commander.data.repository.PreconRepository
 import com.mtg.commander.domain.model.PreconDeck
 import com.mtg.commander.ui.theme.*
@@ -130,9 +131,15 @@ private fun PreconCard(deck: PreconDeck, onClick: () -> Unit) {
     ) {
         Box(Modifier.fillMaxWidth().height(130.dp)) {
             val artUrl = deck.displayArtUrl
+            val context = LocalContext.current
             if (artUrl.isNotBlank()) {
                 AsyncImage(
-                    model = artUrl,
+                    model = ImageRequest.Builder(context)
+                        .data(artUrl)
+                        .addHeader("User-Agent", "MTGCommander/1.0 Android")
+                        .addHeader("Accept", "image/*")
+                        .crossfade(true)
+                        .build(),
                     contentDescription = deck.commanderName,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop

@@ -138,6 +138,16 @@ class GameRepository(
         ))
     }
 
+    suspend fun createGameWithDirection(playerDeckPairs: List<Pair<Long, Long?>>, clockwise: Boolean): Long {
+        val gameId = gameDao.insertGame(GameEntity(turnClockwise = clockwise))
+        playerDeckPairs.forEach { (playerId, deckId) ->
+            participantDao.insertParticipant(
+                GameParticipantEntity(gameId = gameId, playerId = playerId, deckId = deckId)
+            )
+        }
+        return gameId
+    }
+
     suspend fun setCurrentTurnParticipant(gameId: Long, participantId: Long) {
         val game = gameDao.getGameById(gameId) ?: return
         gameDao.updateGame(game.copy(currentTurnParticipantId = participantId))
@@ -161,13 +171,15 @@ class GameRepository(
 private fun GameEntity.toDomain() = Game(
     id = id, startedAt = startedAt, endedAt = endedAt, status = status.name,
     startingParticipantId = startingParticipantId,
-    currentTurnParticipantId = currentTurnParticipantId
+    currentTurnParticipantId = currentTurnParticipantId,
+    turnClockwise = turnClockwise
 )
 
 private fun Game.toEntity() = GameEntity(
     id = id, startedAt = startedAt, endedAt = endedAt, status = GameStatus.valueOf(status),
     startingParticipantId = startingParticipantId,
-    currentTurnParticipantId = currentTurnParticipantId
+    currentTurnParticipantId = currentTurnParticipantId,
+    turnClockwise = turnClockwise
 )
 
 private fun GameParticipantEntity.toDomain() = GameParticipant(

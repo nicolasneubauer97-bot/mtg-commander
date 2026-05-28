@@ -47,7 +47,12 @@ import com.mtg.commander.ui.viewmodel.ParticipantUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActiveGameScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
+fun ActiveGameScreen(
+    gameId: Long,
+    app: MTGCommanderApp,
+    onBack: () -> Unit,
+    onNavigateToDetail: (Long) -> Unit = {}
+) {
     val vm: ActiveGameViewModel = viewModel(
         key = "active_game_$gameId",
         factory = ActiveGameViewModel.factory(gameId, app)
@@ -135,6 +140,24 @@ fun ActiveGameScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
             dismissButton = { TextButton(onClick = vm::dismissCounterLabelDialog) { Text("Abbrechen") } }
         )
     }
+    // ─── Sieger-Overlay ───────────────────────────────────────────────────────
+    state.showVictoryFor?.let { winnerParticipantId ->
+        val winner = state.participants.find { it.participant.id == winnerParticipantId }
+        if (winner != null) {
+            VictoryOverlay(
+                winnerName = winner.player.name,
+                onShowDetail = {
+                    vm.dismissVictory()
+                    onNavigateToDetail(gameId)
+                },
+                onDismiss = {
+                    vm.dismissVictory()
+                    onBack()
+                }
+            )
+        }
+    }
+
     if (state.showStartDialog) {
         val starter = state.participants.find { it.participant.id == state.startingPlayerId }
         if (starter != null) {
@@ -582,16 +605,30 @@ private fun MiniPlayerPanel(
                             tint = themeText.copy(alpha = 0.7f))
                     }
                 }
-                // ─── Nächster-Spieler-Button: nur im aktiven Spieler-Panel ────
+                // ─── Nächster/Vorheriger nur im aktiven Spieler-Panel ─────────
                 if (isCurrentTurn) {
-                    FilledTonalButton(
-                        onClick = vm::nextPlayer,
-                        modifier = Modifier.fillMaxWidth().height(btnH),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                    ) {
-                        Icon(Icons.Filled.SkipNext, null, modifier = Modifier.size(smallFs.value.dp))
-                        Spacer(Modifier.width(3.dp))
-                        Text("Nächster Spieler", fontSize = smallFs)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()) {
+                        if (state.canUndo) {
+                            OutlinedButton(
+                                onClick = vm::previousPlayer,
+                                modifier = Modifier.weight(1f).height(btnH),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Filled.SkipPrevious, null, Modifier.size(smallFs.value.dp))
+                                Spacer(Modifier.width(2.dp))
+                                Text("Zurück", fontSize = smallFs)
+                            }
+                        }
+                        FilledTonalButton(
+                            onClick = vm::nextPlayer,
+                            modifier = Modifier.weight(if (state.canUndo) 1.5f else 1f).height(btnH),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
+                            Icon(Icons.Filled.SkipNext, null, Modifier.size(smallFs.value.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text("Nächster", fontSize = smallFs)
+                        }
                     }
                 }
             }
@@ -631,6 +668,49 @@ private fun MiniPlayerPanel(
                                 vm.updateCommanderDamage(att.participant.id, p.id, +1) }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+// ─── Sieger-Overlay ──────────────────────────────────────────────────────────
+
+@Composable
+private fun VictoryOverlay(winnerName: String, onShowDetail: () -> Unit, onDismiss: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.75f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.width(300.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(2.dp, WinnerColor),
+            elevation = CardDefaults.cardElevation(16.dp)
+        ) {
+            Column(
+                Modifier.padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("★", fontSize = 48.sp, color = WinnerColor)
+                Spacer(Modifier.height(8.dp))
+                Text("Sieger!", style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold, color = WinnerColor)
+                Spacer(Modifier.height(8.dp))
+                Text(winnerName, style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(24.dp))
+                Button(
+                    onClick = onShowDetail,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.Assessment, null, Modifier.padding(end = 6.dp))
+                    Text("Ergebnis anzeigen")
+                }
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                    Text("Hauptmenü")
                 }
             }
         }
@@ -888,15 +968,22 @@ private fun FullPlayerCard(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                // Nächster-Spieler nur im aktiven Spieler-Panel
                 if (state.currentTurnParticipantId == p.id && !p.isEliminated && !isFinished) {
                     Spacer(Modifier.height(4.dp))
-                    FilledTonalButton(
-                        onClick = vm::nextPlayer,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.SkipNext, null, Modifier.padding(end = 6.dp))
-                        Text("Nächster Spieler")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (state.canUndo) {
+                            OutlinedButton(onClick = vm::previousPlayer, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Filled.SkipPrevious, null, Modifier.padding(end = 4.dp))
+                                Text("Zurück")
+                            }
+                        }
+                        FilledTonalButton(
+                            onClick = vm::nextPlayer,
+                            modifier = Modifier.weight(if (state.canUndo) 1.5f else 1f)
+                        ) {
+                            Icon(Icons.Filled.SkipNext, null, Modifier.padding(end = 4.dp))
+                            Text("Nächster Spieler")
+                        }
                     }
                 }
                 if (state.showCommanderDamageFor == p.id) {

@@ -19,7 +19,8 @@ data class PreconDeck(
         commanderName.isNotBlank() -> {
             val enc = try { URLEncoder.encode(commanderName, "UTF-8") }
                       catch (_: Exception) { commanderName.replace(" ", "%20") }
-            "https://api.scryfall.com/cards/named?exact=$enc&format=image&version=art_crop"
+            // fuzzy tolerates minor name variations; format=image follows redirect to CDN
+            "https://api.scryfall.com/cards/named?fuzzy=$enc&format=image&version=art_crop"
         }
         else -> ""
     }

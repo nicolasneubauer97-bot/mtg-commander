@@ -10,6 +10,7 @@ data class GameEntity(
     val startedAt: Long = System.currentTimeMillis(),
     val endedAt: Long? = null,
     val status: GameStatus = GameStatus.IN_PROGRESS,
-    val startingParticipantId: Long? = null,     // who was randomly chosen first
-    val currentTurnParticipantId: Long? = null   // whose turn it currently is
+    val startingParticipantId: Long? = null,
+    val currentTurnParticipantId: Long? = null,
+    val turnClockwise: Boolean = true            // true = clockwise, false = counter-clockwise
 )
