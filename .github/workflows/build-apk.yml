@@ -19,7 +19,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.4
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.4'
@@ -48,23 +48,14 @@ jobs:
               -keypass android \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -dname "CN=MTG Commander,O=MTGCommander,C=DE"
-            echo ""
-            echo "================================================================"
-            echo "EINMALIGE SETUP-AKTION ERFORDERLICH:"
-            echo "Repo → Settings → Secrets → Actions → New secret"
-            echo "  Name:  KEYSTORE_BASE64"
-            echo "  Wert:  (folgender Base64-String)"
-            echo "================================================================"
-            base64 -w 0 "$KEYSTORE_FILE"
-            echo ""
-            echo "================================================================"
-            echo "Danach: alte App einmalig deinstallieren, neu installieren."
-            echo "================================================================"
           fi
           echo "KEYSTORE_PATH=$KEYSTORE_FILE" >> $GITHUB_ENV
 
+      - name: Generate Gradle Wrapper JAR
+        run: gradle wrapper --gradle-version=8.4
+
       - name: Build Release APK
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace --info 2>&1 | tee build-output.txt; exit ${PIPESTATUS[0]}
         env:
           ANDROID_HOME:     /usr/local/lib/android/sdk
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -72,6 +63,14 @@ jobs:
           KEYSTORE_PASS:    android
           KEY_ALIAS:        androiddebugkey
           KEY_PASS:         android
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-v${{ github.run_number }}
+          path: build-output.txt
+          retention-days: 7
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -28,7 +28,7 @@ class StatsRepository(
 
         // Starter count: games where game.startingParticipantId matches one of this player's participantIds
         val participantIds = participants.map { it.id }.toSet()
-        val allFinishedGames = gameDao.getFinishedGamesSync()
+        val allFinishedGames = gameDao.getFinishedGamesSync(GameStatus.FINISHED)
         val timesStarter = allFinishedGames.count { it.startingParticipantId in participantIds }
 
         // Life change stats: aggregate across all finished games this player participated in
