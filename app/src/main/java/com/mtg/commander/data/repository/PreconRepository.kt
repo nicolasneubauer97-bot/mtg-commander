@@ -85,7 +85,8 @@ class PreconRepository(context: Context) {
             for (i in 0 until data.length()) {
                 val item = data.getJSONObject(i)
                 if (item.optString("type") != "Commander Deck") continue
-                val fileName = item.optString("fileName", "").ifBlank { continue }
+                val fileName = item.optString("fileName", "")
+                if (fileName.isBlank()) continue
                 if (fileName.contains("Collector", ignoreCase = true)) continue
                 result.add(PreconDeck(
                     fileName = fileName,
