@@ -436,6 +436,22 @@ class ActiveGameViewModel(
 
     fun eliminatePlayer(victimId: Long, killerId: Long?) {
         viewModelScope.launch {
+            // Commit pending life deltas FIRST so damage leading to elimination counts for stats
+            val committed = pendingLifeDeltas.toMap()
+            val currentId = _uiState.value.currentTurnParticipantId
+            if (committed.isNotEmpty()) {
+                committed.forEach { (pid, delta) ->
+                    if (delta != 0) {
+                        gameRepository.logLifeChange(
+                            gameId = gameId, targetParticipantId = pid,
+                            activeTurnParticipantId = currentId,
+                            delta = delta, turnNumber = _uiState.value.currentTurnNumber
+                        )
+                    }
+                }
+                pendingLifeDeltas.clear()
+            }
+
             val all = gameRepository.getParticipantsForGameSync(gameId)
             val active = all.filter { !it.isEliminated }
             val placement = active.size
