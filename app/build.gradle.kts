@@ -12,21 +12,35 @@ android {
         applicationId = "com.mtg.commander"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
+        versionCode = (System.getenv("BUILD_NUMBER") ?: "1").toInt()
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("KEYSTORE_PATH")
+            if (keystorePath != null) {
+                storeFile    = file(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASS") ?: "android"
+                keyAlias     = System.getenv("KEY_ALIAS")      ?: "androiddebugkey"
+                keyPassword  = System.getenv("KEY_PASS")       ?: "android"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig   = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
