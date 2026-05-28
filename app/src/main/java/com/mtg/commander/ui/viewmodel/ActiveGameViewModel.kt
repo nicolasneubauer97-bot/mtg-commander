@@ -35,6 +35,10 @@ data class ActiveGameUiState(
     val showEndGameConfirm: Boolean = false,
     val startingPlayerId: Long? = null,
     val showStartDialog: Boolean = false,
+    // Turn tracking
+    val currentTurnParticipantId: Long? = null,
+    val currentTurnNumber: Int = 0,
+    // Dice
     val isDiceRolling: Boolean = false,
     val diceAnimValue: Int = 1,
     val diceResult: Int? = null,
@@ -47,10 +51,13 @@ data class ActiveGameUiState(
     val showCounterLabelDialogFor: Long? = null,
     val poisonCounters: Map<Long, Int> = emptyMap(),
     val optionalCounters: Map<Long, Int> = emptyMap(),
-    // Crown = top leaderboard rank among active players; Trash = bottom
+    // Crown/Trash leaderboard badges
     val crownPlayerId: Long? = null,
     val trashPlayerId: Long? = null
-)
+) {
+    val currentTurnPlayer: ParticipantUiState? get() =
+        participants.find { it.participant.id == currentTurnParticipantId }
+}
 
 class ActiveGameViewModel(
     private val gameId: Long,
@@ -63,7 +70,6 @@ class ActiveGameViewModel(
     private val _uiState = MutableStateFlow(ActiveGameUiState())
     val uiState: StateFlow<ActiveGameUiState> = _uiState.asStateFlow()
 
-    // Only true on the very first collection – used to decide whether to show start dialog
     private var isFirstLoad = true
 
     init { loadGame() }
@@ -94,25 +100,31 @@ class ActiveGameViewModel(
                 val startingId = cur.startingPlayerId
                     ?: participantUiStates.randomOrNull()?.participant?.id
 
-                // Show start dialog only for fresh games (started < 30 seconds ago)
                 val isNewGame = game != null &&
                     (System.currentTimeMillis() - game.startedAt) < 30_000L &&
                     participants.all { it.currentLife == it.startingLife }
                 val showStart = isFirstLoad && isNewGame
                 isFirstLoad = false
 
-                val (crown, trash) = computeCrownTrash(participantUiStates)
+                // Restore persisted turn from DB if available
+                val persistedTurn = game?.currentTurnParticipantId
+                val currentTurn = when {
+                    cur.currentTurnParticipantId != null -> cur.currentTurnParticipantId
+                    persistedTurn != null -> persistedTurn
+                    else -> null
+                }
 
+                val (crown, trash) = computeCrownTrash(participantUiStates, emptyMap())
                 _uiState.value = cur.copy(
                     game = game, participants = participantUiStates,
                     commanderDamage = damage, kills = kills,
                     isLoading = false, startingPlayerId = startingId,
                     showStartDialog = if (showStart) true else cur.showStartDialog,
+                    currentTurnParticipantId = currentTurn,
                     crownPlayerId = crown, trashPlayerId = trash
                 )
             }
         }
-        // Load leaderboard ranks in background
         viewModelScope.launch { refreshLeaderboardRanks() }
     }
 
@@ -121,7 +133,6 @@ class ActiveGameViewModel(
             val allPlayers = playerRepository.getAllPlayers().firstOrNull() ?: return
             val stats = allPlayers.map { statsRepository.getPlayerStats(it.id, it.name) }
                 .sortedByDescending { it.winRate }
-            // Map playerId → rank (1 = best)
             val rankMap = stats.mapIndexed { i, s -> s.playerId to (i + 1) }.toMap()
             val cur = _uiState.value
             val (crown, trash) = computeCrownTrash(cur.participants, rankMap)
@@ -131,11 +142,10 @@ class ActiveGameViewModel(
 
     private fun computeCrownTrash(
         participants: List<ParticipantUiState>,
-        rankMap: Map<Long, Int>? = null
+        rankMap: Map<Long, Int>
     ): Pair<Long?, Long?> {
         val active = participants.filter { !it.participant.isEliminated }
-        if (active.size < 2) return Pair(null, null)
-        if (rankMap == null || rankMap.isEmpty()) return Pair(null, null)
+        if (active.size < 2 || rankMap.isEmpty()) return Pair(null, null)
         val withRank = active.mapNotNull { p ->
             val rank = rankMap[p.player.id] ?: return@mapNotNull null
             p to rank
@@ -146,11 +156,21 @@ class ActiveGameViewModel(
         return Pair(if (crown != trash) crown else null, if (crown != trash) trash else null)
     }
 
+    // ─── Life changes ─────────────────────────────────────────────────────────
+
     fun updateLife(participantId: Long, delta: Int) {
         viewModelScope.launch {
             val p = _uiState.value.participants.find { it.participant.id == participantId }
                 ?.participant ?: return@launch
             gameRepository.updateParticipant(p.copy(currentLife = p.currentLife + delta))
+            // Log life change event
+            gameRepository.logLifeChange(
+                gameId = gameId,
+                targetParticipantId = participantId,
+                activeTurnParticipantId = _uiState.value.currentTurnParticipantId,
+                delta = delta,
+                turnNumber = _uiState.value.currentTurnNumber
+            )
         }
     }
 
@@ -209,6 +229,52 @@ class ActiveGameViewModel(
         }
     }
 
+    // ─── Turn tracking ────────────────────────────────────────────────────────
+
+    fun nextPlayer() {
+        val state = _uiState.value
+        val active = state.participants.filter { !it.participant.isEliminated }
+        if (active.isEmpty()) return
+
+        val newTurnNumber = state.currentTurnNumber + 1
+
+        val nextParticipantId: Long = if (state.currentTurnParticipantId == null) {
+            // No turn active yet — start with the first (or starting) player
+            val startingId = state.startingPlayerId
+            if (startingId != null && active.any { it.participant.id == startingId })
+                startingId
+            else
+                active.first().participant.id
+        } else {
+            val currentIdx = active.indexOfFirst { it.participant.id == state.currentTurnParticipantId }
+            val nextIdx = (currentIdx + 1) % active.size
+            active[nextIdx].participant.id
+        }
+
+        _uiState.value = state.copy(
+            currentTurnParticipantId = nextParticipantId,
+            currentTurnNumber = newTurnNumber
+        )
+        viewModelScope.launch {
+            gameRepository.setCurrentTurnParticipant(gameId, nextParticipantId)
+        }
+    }
+
+    fun dismissStartDialog() {
+        val startingId = _uiState.value.startingPlayerId
+        _uiState.value = _uiState.value.copy(
+            showStartDialog = false,
+            currentTurnParticipantId = startingId ?: _uiState.value.currentTurnParticipantId
+        )
+        if (startingId != null) {
+            viewModelScope.launch {
+                gameRepository.setStartingParticipant(gameId, startingId)
+            }
+        }
+    }
+
+    // ─── Eliminate ───────────────────────────────────────────────────────────
+
     fun showEliminateDialog(participantId: Long) {
         _uiState.value = _uiState.value.copy(showEliminateDialogFor = participantId)
     }
@@ -236,12 +302,10 @@ class ActiveGameViewModel(
                 gameRepository.updateGame(game.copy(
                     status = "FINISHED", endedAt = System.currentTimeMillis()))
             }
+            // If the eliminated player was the current turn player, advance to next
+            if (_uiState.value.currentTurnParticipantId == victimId) nextPlayer()
             _uiState.value = _uiState.value.copy(showEliminateDialogFor = null)
         }
-    }
-
-    fun dismissStartDialog() {
-        _uiState.value = _uiState.value.copy(showStartDialog = false)
     }
 
     // ─── Dice ────────────────────────────────────────────────────────────────
@@ -272,7 +336,7 @@ class ActiveGameViewModel(
             _uiState.value = _uiState.value.copy(diceResult = null)
     }
 
-    // ─── Random Opponent (slot-machine animation) ─────────────────────────────
+    // ─── Random Opponent (slot-machine + DB logging) ──────────────────────────
 
     fun randomizeOpponent(myParticipantId: Long) {
         if (_uiState.value.isRandomizing) return
@@ -301,6 +365,12 @@ class ActiveGameViewModel(
                 isRandomizing = false,
                 randomOpponentId = finalOpponent.participant.id,
                 randomizingDisplayName = finalOpponent.player.name
+            )
+            // Persist the random pick
+            gameRepository.logRandomOpponentPick(
+                gameId = gameId,
+                chooserParticipantId = myParticipantId,
+                chosenParticipantId = finalOpponent.participant.id
             )
         }
     }

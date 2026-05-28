@@ -27,6 +27,7 @@ sealed class Screen(val route: String) {
     object PreconPicker : Screen("precon_picker/{playerId}") {
         fun createRoute(playerId: Long) = "precon_picker/$playerId"
     }
+    object RandomOpponentStats : Screen("random_opponent_stats")
 }
 
 @Composable
@@ -43,7 +44,8 @@ fun AppNavigation(navController: NavHostController) {
                 onDecks = { navController.navigate(Screen.Decks.route) },
                 onLeaderboard = { navController.navigate(Screen.Leaderboard.route) },
                 onDeckStats = { navController.navigate(Screen.DeckStats.route) },
-                onHistory = { navController.navigate(Screen.GameHistory.route) }
+                onHistory = { navController.navigate(Screen.GameHistory.route) },
+                onRandomStats = { navController.navigate(Screen.RandomOpponentStats.route) }
             )
         }
         composable(Screen.Players.route) {
@@ -104,6 +106,9 @@ fun AppNavigation(navController: NavHostController) {
                 app = app,
                 onBack = { navController.popBackStack() }
             )
+        }
+        composable(Screen.RandomOpponentStats.route) {
+            RandomOpponentStatsScreen(app = app, onBack = { navController.popBackStack() })
         }
         composable(
             route = Screen.PreconPicker.route,

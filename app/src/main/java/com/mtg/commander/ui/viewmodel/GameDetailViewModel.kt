@@ -7,6 +7,7 @@ import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.GameRepository
 import com.mtg.commander.data.repository.PlayerRepository
+import com.mtg.commander.data.repository.StatsRepository
 import com.mtg.commander.domain.model.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -16,6 +17,10 @@ data class GameDetailUiState(
     val participants: List<ParticipantUiState> = emptyList(),
     val kills: List<Kill> = emptyList(),
     val commanderDamage: List<CommanderDamage> = emptyList(),
+    // participantId → (gained, lost)
+    val lifeSummary: Map<Long, Pair<Int, Int>> = emptyMap(),
+    // attackerParticipantId → (targetParticipantId → damage)
+    val damageByAttacker: Map<Long, Map<Long, Int>> = emptyMap(),
     val isLoading: Boolean = true
 )
 
@@ -23,7 +28,8 @@ class GameDetailViewModel(
     private val gameId: Long,
     private val gameRepository: GameRepository,
     private val playerRepository: PlayerRepository,
-    private val deckRepository: DeckRepository
+    private val deckRepository: DeckRepository,
+    private val statsRepository: StatsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GameDetailUiState())
@@ -47,11 +53,17 @@ class GameDetailViewModel(
                         .associate { it.attackerParticipantId to it.damage }
                     ParticipantUiState(p, player, deck, receivedDamage)
                 }.sortedBy { it.participant.placement }
+
+                val lifeSummary = statsRepository.getLifeSummaryForGame(gameId)
+                val damageByAttacker = statsRepository.getDamageByAttackerForGame(gameId)
+
                 _uiState.value = _uiState.value.copy(
                     game = game,
                     participants = participantUiStates,
                     kills = kills,
                     commanderDamage = damage,
+                    lifeSummary = lifeSummary,
+                    damageByAttacker = damageByAttacker,
                     isLoading = false
                 )
             }
@@ -62,7 +74,8 @@ class GameDetailViewModel(
         fun factory(gameId: Long, app: MTGCommanderApp) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                GameDetailViewModel(gameId, app.gameRepository, app.playerRepository, app.deckRepository) as T
+                GameDetailViewModel(gameId, app.gameRepository, app.playerRepository,
+                    app.deckRepository, app.statsRepository) as T
         }
     }
 }

@@ -17,9 +17,11 @@ import com.mtg.commander.data.entity.*
         GameEntity::class,
         GameParticipantEntity::class,
         CommanderDamageEntity::class,
-        KillEntity::class
+        KillEntity::class,
+        LifeChangeEventEntity::class,
+        RandomOpponentPickEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -30,6 +32,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun gameParticipantDao(): GameParticipantDao
     abstract fun commanderDamageDao(): CommanderDamageDao
     abstract fun killDao(): KillDao
+    abstract fun lifeChangeEventDao(): LifeChangeEventDao
+    abstract fun randomOpponentPickDao(): RandomOpponentPickDao
 
     companion object {
         @Volatile
@@ -72,6 +76,44 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // New turn-tracking columns on games table
+                database.execSQL("ALTER TABLE `games` ADD COLUMN `startingParticipantId` INTEGER")
+                database.execSQL("ALTER TABLE `games` ADD COLUMN `currentTurnParticipantId` INTEGER")
+                // Life change events table
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `life_change_events` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `gameId` INTEGER NOT NULL,
+                        `targetParticipantId` INTEGER NOT NULL,
+                        `activeTurnParticipantId` INTEGER,
+                        `delta` INTEGER NOT NULL,
+                        `turnNumber` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`gameId`) REFERENCES `games`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_life_change_events_gameId` ON `life_change_events` (`gameId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_life_change_events_targetParticipantId` ON `life_change_events` (`targetParticipantId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_life_change_events_activeTurnParticipantId` ON `life_change_events` (`activeTurnParticipantId`)")
+                // Random opponent picks table
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `random_opponent_picks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `gameId` INTEGER NOT NULL,
+                        `chooserParticipantId` INTEGER NOT NULL,
+                        `chosenParticipantId` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`gameId`) REFERENCES `games`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_random_opponent_picks_gameId` ON `random_opponent_picks` (`gameId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_random_opponent_picks_chooserParticipantId` ON `random_opponent_picks` (`chooserParticipantId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_random_opponent_picks_chosenParticipantId` ON `random_opponent_picks` (`chosenParticipantId`)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(
@@ -79,7 +121,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "mtg_commander.db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build().also { INSTANCE = it }
             }
     }

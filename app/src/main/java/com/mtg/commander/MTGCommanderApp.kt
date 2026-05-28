@@ -17,14 +17,19 @@ class MTGCommanderApp : Application() {
             database.gameDao(),
             database.gameParticipantDao(),
             database.commanderDamageDao(),
-            database.killDao()
+            database.killDao(),
+            database.lifeChangeEventDao(),
+            database.randomOpponentPickDao()
         )
     }
-    val preconRepository by lazy { PreconRepository(this) }
     val statsRepository by lazy {
         StatsRepository(
             database.gameParticipantDao(),
-            database.killDao()
+            database.killDao(),
+            database.gameDao(),
+            database.lifeChangeEventDao(),
+            database.randomOpponentPickDao()
         )
     }
+    val preconRepository by lazy { PreconRepository(this) }
 }

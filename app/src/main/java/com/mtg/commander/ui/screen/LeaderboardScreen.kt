@@ -127,6 +127,12 @@ private fun LeaderboardCard(rank: Int, stats: PlayerStats) {
                     StatChip("Kills",  "${stats.kills}")
                     StatChip("Tode",   "${stats.deaths}")
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    StatChip("1.Spieler", "${stats.timesChosenAsStarter}")
+                    StatChip("Dmg",       "${stats.totalDamageDealtToOthers}")
+                    val sign = if (stats.netLifeChange >= 0) "+" else ""
+                    StatChip("Netto-LP",  "$sign${stats.netLifeChange}")
+                }
             }
         }
     }
@@ -146,4 +152,5 @@ private fun LeaderboardSort.label() = when (this) {
     LeaderboardSort.GAMES_PLAYED -> "Spiele"
     LeaderboardSort.AVG_PLACEMENT -> "Platzierung"
     LeaderboardSort.KILLS -> "Kills"
+    LeaderboardSort.DAMAGE -> "Schaden"
 }

@@ -34,6 +34,9 @@ interface GameDao {
     @Query("DELETE FROM games WHERE status = :status")
     suspend fun deleteGamesByStatus(status: GameStatus)
 
+    @Query("SELECT * FROM games WHERE status = :status ORDER BY startedAt DESC")
+    suspend fun getFinishedGamesSync(status: GameStatus = GameStatus.FINISHED): List<GameEntity>
+
     @Query("DELETE FROM games")
     suspend fun deleteAllGames()
 }

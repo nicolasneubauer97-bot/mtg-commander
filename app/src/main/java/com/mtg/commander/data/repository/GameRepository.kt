@@ -1,9 +1,6 @@
 package com.mtg.commander.data.repository
 
-import com.mtg.commander.data.dao.CommanderDamageDao
-import com.mtg.commander.data.dao.GameDao
-import com.mtg.commander.data.dao.GameParticipantDao
-import com.mtg.commander.data.dao.KillDao
+import com.mtg.commander.data.dao.*
 import com.mtg.commander.data.entity.*
 import com.mtg.commander.domain.model.*
 import kotlinx.coroutines.flow.Flow
@@ -13,7 +10,9 @@ class GameRepository(
     private val gameDao: GameDao,
     private val participantDao: GameParticipantDao,
     private val commanderDamageDao: CommanderDamageDao,
-    private val killDao: KillDao
+    private val killDao: KillDao,
+    private val lifeChangeEventDao: LifeChangeEventDao,
+    private val randomOpponentPickDao: RandomOpponentPickDao
 ) {
     fun getAllGames(): Flow<List<Game>> =
         gameDao.getAllGames().map { it.map(GameEntity::toDomain) }
@@ -94,14 +93,69 @@ class GameRepository(
 
     suspend fun getKillsForGameSync(gameId: Long): List<Kill> =
         killDao.getKillsForGameSync(gameId).map(KillEntity::toDomain)
+
+    // ─── Life Change Events ───────────────────────────────────────────────────
+
+    suspend fun logLifeChange(
+        gameId: Long, targetParticipantId: Long,
+        activeTurnParticipantId: Long?, delta: Int, turnNumber: Int
+    ) {
+        lifeChangeEventDao.insert(
+            LifeChangeEventEntity(
+                gameId = gameId, targetParticipantId = targetParticipantId,
+                activeTurnParticipantId = activeTurnParticipantId,
+                delta = delta, turnNumber = turnNumber
+            )
+        )
+    }
+
+    suspend fun getLifeEventsForGame(gameId: Long): List<LifeChangeEventEntity> =
+        lifeChangeEventDao.getEventsForGame(gameId)
+
+    // ─── Random Opponent Picks ────────────────────────────────────────────────
+
+    suspend fun logRandomOpponentPick(gameId: Long, chooserParticipantId: Long, chosenParticipantId: Long) {
+        randomOpponentPickDao.insert(
+            RandomOpponentPickEntity(
+                gameId = gameId,
+                chooserParticipantId = chooserParticipantId,
+                chosenParticipantId = chosenParticipantId
+            )
+        )
+    }
+
+    suspend fun getRandomPickAggregates() = randomOpponentPickDao.getPickAggregates()
+
+    // ─── Turn Tracking ────────────────────────────────────────────────────────
+
+    suspend fun setStartingParticipant(gameId: Long, participantId: Long) {
+        val game = gameDao.getGameById(gameId) ?: return
+        gameDao.updateGame(game.copy(
+            startingParticipantId = participantId,
+            currentTurnParticipantId = participantId
+        ))
+    }
+
+    suspend fun setCurrentTurnParticipant(gameId: Long, participantId: Long) {
+        val game = gameDao.getGameById(gameId) ?: return
+        gameDao.updateGame(game.copy(currentTurnParticipantId = participantId))
+    }
+
+    suspend fun deleteAllLifeChangeEvents() = lifeChangeEventDao.deleteAll()
+
+    suspend fun deleteAllRandomOpponentPicks() = randomOpponentPickDao.deleteAll()
 }
 
 private fun GameEntity.toDomain() = Game(
-    id = id, startedAt = startedAt, endedAt = endedAt, status = status.name
+    id = id, startedAt = startedAt, endedAt = endedAt, status = status.name,
+    startingParticipantId = startingParticipantId,
+    currentTurnParticipantId = currentTurnParticipantId
 )
 
 private fun Game.toEntity() = GameEntity(
-    id = id, startedAt = startedAt, endedAt = endedAt, status = GameStatus.valueOf(status)
+    id = id, startedAt = startedAt, endedAt = endedAt, status = GameStatus.valueOf(status),
+    startingParticipantId = startingParticipantId,
+    currentTurnParticipantId = currentTurnParticipantId
 )
 
 private fun GameParticipantEntity.toDomain() = GameParticipant(
@@ -115,7 +169,6 @@ private fun GameParticipant.toEntity() = GameParticipantEntity(
     startingLife = startingLife, currentLife = currentLife,
     placement = placement, isEliminated = isEliminated, eliminatedAt = eliminatedAt
 )
-
 
 private fun CommanderDamageEntity.toDomain() = CommanderDamage(
     id = id, gameId = gameId,

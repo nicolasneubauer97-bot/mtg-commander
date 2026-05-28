@@ -362,21 +362,31 @@ private fun RotatingLayout(
                     Modifier.fillMaxWidth().height(halfH).align(Alignment.TopCenter))
             }
         }
-        Box(Modifier.align(Alignment.Center)) {
-            if (centerVisible) {
-                CenterActions(vm, state, isFinished, onBack,
-                    onHide = { centerVisible = false },
-                    modifier = Modifier.size(centerSize))
-            } else {
-                FilledIconButton(
-                    onClick = { centerVisible = true },
-                    modifier = Modifier.size(36.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
-                ) {
-                    Icon(Icons.Filled.Visibility, "Menü", Modifier.size(20.dp))
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Hideable center menu
+            Box {
+                if (centerVisible) {
+                    CenterActions(vm, state, isFinished, onBack,
+                        onHide = { centerVisible = false },
+                        modifier = Modifier.size(centerSize))
+                } else {
+                    FilledIconButton(
+                        onClick = { centerVisible = true },
+                        modifier = Modifier.size(36.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                    ) {
+                        Icon(Icons.Filled.Visibility, "Menü", Modifier.size(20.dp))
+                    }
                 }
             }
+            // ALWAYS visible turn indicator – outside the hideable menu
+            Spacer(Modifier.height(4.dp))
+            TurnBar(state = state, isFinished = isFinished, compact = true,
+                onNextPlayer = vm::nextPlayer)
         }
     }
 }
@@ -407,6 +417,7 @@ private fun MiniPlayerPanel(
     val isRandom = state.randomOpponentId == p.id
     val isCrown = state.crownPlayerId == p.id
     val isTrash = state.trashPlayerId == p.id
+    val isCurrentTurn = state.currentTurnParticipantId == p.id && !p.isEliminated && !isFinished
     val hasButtons = !p.isEliminated && !isFinished
 
     val lifeFs  = (cellH.value * 0.30f).coerceIn(32f, 200f).sp
@@ -423,12 +434,13 @@ private fun MiniPlayerPanel(
         else           -> MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
     }
     val borderColor = when {
+        isCurrentTurn  -> MaterialTheme.colorScheme.primary         // bright border for active turn
         isWinner       -> WinnerColor
         p.isEliminated -> EliminatedColor.copy(alpha = 0.35f)
-        isRandom       -> MaterialTheme.colorScheme.primary
+        isRandom       -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
         else           -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
     }
-    val borderWidth = if (isWinner || isRandom) 2.dp else 1.dp
+    val borderWidth = if (isCurrentTurn || isWinner || isRandom) 2.dp else 1.dp
     val shape = RoundedCornerShape(8.dp)
 
     Box(modifier = Modifier.fillMaxSize().padding(2.dp).clip(shape)
@@ -604,6 +616,54 @@ private fun MiniPlayerPanel(
     }
 }
 
+// ─── Turn Bar (immer sichtbar) ───────────────────────────────────────────────
+
+@Composable
+private fun TurnBar(
+    state: ActiveGameUiState,
+    isFinished: Boolean,
+    compact: Boolean,
+    onNextPlayer: () -> Unit
+) {
+    if (isFinished) return
+    val currentName = state.currentTurnPlayer?.player?.name
+    val bg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (compact) 0.92f else 1f)
+    val shape = RoundedCornerShape(if (compact) 20.dp else 0.dp)
+
+    Surface(color = bg, shape = shape,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))) {
+        Row(
+            modifier = Modifier
+                .then(if (compact) Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                      else Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(Icons.Filled.PlayArrow, null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(if (compact) 14.dp else 18.dp))
+            Text(
+                text = if (currentName != null) "Zug: $currentName" else "Kein Zug",
+                fontSize = if (compact) 11.sp else 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1
+            )
+            Spacer(Modifier.weight(1f))
+            FilledTonalButton(
+                onClick = onNextPlayer,
+                modifier = Modifier.height(if (compact) 26.dp else 32.dp),
+                contentPadding = PaddingValues(horizontal = if (compact) 8.dp else 12.dp, vertical = 0.dp)
+            ) {
+                Icon(Icons.Filled.SkipNext, null,
+                    modifier = Modifier.size(if (compact) 14.dp else 16.dp))
+                Spacer(Modifier.width(2.dp))
+                Text("Nächster", fontSize = if (compact) 10.sp else 12.sp)
+            }
+        }
+    }
+}
+
 @Composable
 private fun CenterActions(
     vm: ActiveGameViewModel, state: ActiveGameUiState,
@@ -665,13 +725,18 @@ private fun ScrollLayout(
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding)
-                .verticalScroll(rememberScrollState()).padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            state.participants.forEach { pState ->
-                FullPlayerCard(vm, state, pState, isFinished)
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // Always-visible turn bar for 2-player mode
+            TurnBar(state = state, isFinished = isFinished, compact = false,
+                onNextPlayer = vm::nextPlayer)
+            Column(
+                modifier = Modifier.fillMaxSize()
+                    .verticalScroll(rememberScrollState()).padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                state.participants.forEach { pState ->
+                    FullPlayerCard(vm, state, pState, isFinished)
+                }
             }
         }
     }

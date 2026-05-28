@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mtg.commander.MTGCommanderApp
@@ -36,7 +37,7 @@ fun GameDetailScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text("Spieldetails") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Zurueck") }
+                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Zurück") }
                 }
             )
         }
@@ -51,11 +52,14 @@ fun GameDetailScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // ─── Game header ──────────────────────────────────────────────────
                 item {
                     state.game?.let { game ->
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text("Spiel #${game.id}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text("Spiel #${game.id}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold)
                                 Text("Gestartet: ${fmt.format(Date(game.startedAt))}")
                                 game.endedAt?.let { Text("Beendet: ${fmt.format(Date(it))}") }
                             }
@@ -63,33 +67,64 @@ fun GameDetailScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
                     }
                 }
 
+                // ─── Placements ───────────────────────────────────────────────────
                 item {
-                    Text("Platzierungen", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp))
+                    Text("Platzierungen", style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(bottom = 4.dp))
                 }
-
                 items(state.participants, key = { it.participant.id }) { pState ->
-                    PlacementCard(pState = pState, commanderDamageByAttacker = buildCommanderDamageMap(pState, state.participants))
+                    PlacementCard(
+                        pState = pState,
+                        commanderDamageByAttacker = buildCommanderDamageMap(pState, state.participants),
+                        lifeSummary = state.lifeSummary[pState.participant.id]
+                    )
                 }
 
+                // ─── Kills ────────────────────────────────────────────────────────
                 if (state.kills.isNotEmpty()) {
                     item {
-                        Text("Kills", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                        Text("Kills", style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                     }
                     items(state.kills, key = { it.id }) { kill ->
                         val victim = state.participants.find { it.participant.id == kill.victimParticipantId }
                         val killer = state.participants.find { it.participant.id == kill.killerParticipantId }
                         Card(modifier = Modifier.fillMaxWidth()) {
-                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.padding(end = 8.dp))
+                            Row(modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.Close, null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(end = 8.dp))
                                 Column {
                                     Text(victim?.player?.name ?: "?", fontWeight = FontWeight.Bold)
                                     Text(
-                                        if (killer != null) "Gekillt von ${killer.player.name}" else "Selbstverschuldet / Unbekannt",
+                                        if (killer != null) "Eliminiert von ${killer.player.name}"
+                                        else "Selbstverschuldet / Unbekannt",
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                 }
                             }
                         }
+                    }
+                }
+
+                // ─── Damage breakdown (per attacker, only if life events exist) ──
+                if (state.damageByAttacker.isNotEmpty()) {
+                    item {
+                        Text("Schaden pro Spieler (während eigenen Zuges)",
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                    }
+                    items(
+                        items = state.damageByAttacker.entries.toList(),
+                        key = { it.key }
+                    ) { (attackerId, targetMap) ->
+                        val attacker = state.participants.find { it.participant.id == attackerId }
+                        DamageCard(
+                            attackerName = attacker?.player?.name ?: "?",
+                            targetMap = targetMap,
+                            participants = state.participants
+                        )
                     }
                 }
             }
@@ -98,36 +133,77 @@ fun GameDetailScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
 }
 
 @Composable
-private fun PlacementCard(pState: ParticipantUiState, commanderDamageByAttacker: Map<String, Int>) {
+private fun PlacementCard(
+    pState: ParticipantUiState,
+    commanderDamageByAttacker: Map<String, Int>,
+    lifeSummary: Pair<Int, Int>?  // (gained, lost)
+) {
     val p = pState.participant
     val isWinner = p.placement == 1
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isWinner) WinnerColor.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
+            containerColor = if (isWinner) WinnerColor.copy(alpha = 0.15f)
+                            else MaterialTheme.colorScheme.surface
         )
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "#${p.placement ?: "?"}",
+        Row(modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("#${p.placement ?: "?"}",
                 fontWeight = FontWeight.Bold,
                 color = if (isWinner) WinnerColor else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.width(36.dp)
-            )
+                modifier = Modifier.width(36.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(pState.player.name, fontWeight = FontWeight.Bold)
-                Text(pState.deck?.let { "${it.name} | ${it.commanderName}" } ?: "Ohne Deck",
+                Text(pState.deck?.let { "${it.name} · ${it.commanderName}" } ?: "Ohne Deck",
                     style = MaterialTheme.typography.bodySmall)
-                Text("Leben: ${p.currentLife} / ${p.startingLife}", style = MaterialTheme.typography.bodySmall)
+                Text("Leben: ${p.currentLife} / ${p.startingLife}",
+                    style = MaterialTheme.typography.bodySmall)
+                if (lifeSummary != null) {
+                    val (gained, lost) = lifeSummary
+                    val net = gained - lost
+                    val sign = if (net >= 0) "+" else ""
+                    Text("LP: +$gained erhalten / −$lost verloren (netto ${sign}${net})",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary)
+                }
                 if (commanderDamageByAttacker.isNotEmpty()) {
                     Text(
-                        "Cmdr-Schaden: " + commanderDamageByAttacker.entries.joinToString { "${it.key}: ${it.value}" },
+                        "Cmdr-Schaden: " + commanderDamageByAttacker.entries
+                            .joinToString { "${it.key}: ${it.value}" },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DamageCard(
+    attackerName: String,
+    targetMap: Map<Long, Int>,
+    participants: List<ParticipantUiState>
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.ArrowForward, null,
+                    tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(attackerName, fontWeight = FontWeight.SemiBold)
+                Text(" → ", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${targetMap.values.sum()} Gesamtschaden",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            targetMap.forEach { (targetId, dmg) ->
+                val target = participants.find { it.participant.id == targetId }
+                Row(Modifier.padding(start = 20.dp, top = 2.dp)) {
+                    Text("${target?.player?.name ?: "?"}: ", fontSize = 12.sp)
+                    Text("$dmg Schaden", fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error)
                 }
             }
         }

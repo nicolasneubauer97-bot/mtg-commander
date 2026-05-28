@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class LeaderboardSort { WINS, WIN_RATE, GAMES_PLAYED, AVG_PLACEMENT, KILLS }
+enum class LeaderboardSort { WINS, WIN_RATE, GAMES_PLAYED, AVG_PLACEMENT, KILLS, DAMAGE }
 
 data class LeaderboardUiState(
     val stats: List<PlayerStats> = emptyList(),
@@ -58,6 +58,7 @@ class LeaderboardViewModel(
         LeaderboardSort.GAMES_PLAYED -> list.sortedByDescending { it.gamesPlayed }
         LeaderboardSort.AVG_PLACEMENT -> list.sortedBy { it.averagePlacement }
         LeaderboardSort.KILLS -> list.sortedByDescending { it.kills }
+        LeaderboardSort.DAMAGE -> list.sortedByDescending { it.totalDamageDealtToOthers }
     }
 
     companion object {
