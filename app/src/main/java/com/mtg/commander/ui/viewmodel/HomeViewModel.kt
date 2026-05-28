@@ -71,6 +71,7 @@ class HomeViewModel(private val gameRepository: GameRepository) : ViewModel() {
                     gameRepository.deleteAllCommanderDamage()
                     gameRepository.deleteAllLifeChangeEvents()
                     gameRepository.deleteAllRandomOpponentPicks()
+                    gameRepository.deleteAllDiceRolls()
                 }
             }
             _uiState.value = _uiState.value.copy(

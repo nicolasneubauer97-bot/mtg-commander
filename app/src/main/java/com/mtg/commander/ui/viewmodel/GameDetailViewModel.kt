@@ -54,8 +54,8 @@ class GameDetailViewModel(
                     ParticipantUiState(p, player, deck, receivedDamage)
                 }.sortedBy { it.participant.placement }
 
-                val lifeSummary = statsRepository.getLifeSummaryForGame(gameId)
-                val damageByAttacker = statsRepository.getDamageByAttackerForGame(gameId)
+                val lifeSummary = try { statsRepository.getLifeSummaryForGame(gameId) } catch (_: Exception) { emptyMap() }
+                val damageByAttacker = try { statsRepository.getDamageByAttackerForGame(gameId) } catch (_: Exception) { emptyMap() }
 
                 _uiState.value = _uiState.value.copy(
                     game = game,

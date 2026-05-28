@@ -32,11 +32,11 @@ class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
 
     init { loadDecks() }
 
-    private fun loadDecks() {
+    private fun loadDecks(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                val list = repo.getDeckList()
+                val list = repo.getDeckList(forceRefresh)
                 _uiState.value = _uiState.value.copy(decks = list, isLoading = false)
                 // Background: load details for decks without commander info
                 list.filter { it.commanderName.isBlank() }.forEach { deck ->
@@ -69,7 +69,7 @@ class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
 
     fun refresh() {
         repo.clearCache()
-        loadDecks()
+        loadDecks(forceRefresh = true)
     }
 
     companion object {

@@ -36,7 +36,8 @@ fun HomeScreen(
     onLeaderboard: () -> Unit,
     onDeckStats: () -> Unit,
     onHistory: () -> Unit,
-    onRandomStats: () -> Unit = {}
+    onRandomStats: () -> Unit = {},
+    onGlobalDamage: () -> Unit = {}
 ) {
     val vm: HomeViewModel = viewModel(factory = HomeViewModel.factory(app))
     val state by vm.uiState.collectAsStateWithLifecycle()
@@ -108,8 +109,13 @@ fun HomeScreen(
             }
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                HomeNavCard(Icons.Filled.History,  "Spielhistorie",   Modifier.weight(1f), onHistory)
-                HomeNavCard(Icons.Filled.Shuffle,  "Zufalls-Stats",   Modifier.weight(1f), onRandomStats)
+                HomeNavCard(Icons.Filled.History,   "Spielhistorie",  Modifier.weight(1f), onHistory)
+                HomeNavCard(Icons.Filled.Shuffle,   "Zufall & Würfel",Modifier.weight(1f), onRandomStats)
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                HomeNavCard(Icons.Filled.FlashOn,   "Schaden-Stats",  Modifier.weight(1f), onGlobalDamage)
+                Spacer(Modifier.weight(1f))
             }
 
             Spacer(Modifier.height(32.dp))

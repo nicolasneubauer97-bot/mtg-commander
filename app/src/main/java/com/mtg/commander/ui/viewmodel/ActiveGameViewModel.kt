@@ -53,7 +53,9 @@ data class ActiveGameUiState(
     val optionalCounters: Map<Long, Int> = emptyMap(),
     // Crown/Trash leaderboard badges
     val crownPlayerId: Long? = null,
-    val trashPlayerId: Long? = null
+    val trashPlayerId: Long? = null,
+    // Per-player panel color theme (0–4)
+    val playerThemes: Map<Long, Int> = emptyMap()
 ) {
     val currentTurnPlayer: ParticipantUiState? get() =
         participants.find { it.participant.id == currentTurnParticipantId }
@@ -229,35 +231,53 @@ class ActiveGameViewModel(
         }
     }
 
-    // ─── Turn tracking ────────────────────────────────────────────────────────
+    // ─── Turn tracking (clockwise: bottom-left → bottom-right → top-right → top-left)
 
     fun nextPlayer() {
         val state = _uiState.value
-        val active = state.participants.filter { !it.participant.isEliminated }
-        if (active.isEmpty()) return
+        val all = state.participants
+        val count = all.size
+
+        // Clockwise seat order based on layout positions
+        val clockwiseIndices = when (count) {
+            4 -> listOf(0, 1, 3, 2)
+            3 -> listOf(0, 1, 2)
+            else -> listOf(0, 1)
+        }.filter { it < count }
 
         val newTurnNumber = state.currentTurnNumber + 1
+        val currentId = state.currentTurnParticipantId
 
-        val nextParticipantId: Long = if (state.currentTurnParticipantId == null) {
-            // No turn active yet — start with the first (or starting) player
-            val startingId = state.startingPlayerId
-            if (startingId != null && active.any { it.participant.id == startingId })
-                startingId
-            else
-                active.first().participant.id
-        } else {
-            val currentIdx = active.indexOfFirst { it.participant.id == state.currentTurnParticipantId }
-            val nextIdx = (currentIdx + 1) % active.size
-            active[nextIdx].participant.id
+        val currentPos = if (currentId == null) -1
+            else clockwiseIndices.indexOfFirst { all.getOrNull(it)?.participant?.id == currentId }
+
+        var nextPos = currentPos
+        for (i in 1..clockwiseIndices.size) {
+            val candidate = (currentPos + i).let { if (currentPos < 0) i - 1 else it } % clockwiseIndices.size
+            val p = all.getOrNull(clockwiseIndices[candidate]) ?: continue
+            if (!p.participant.isEliminated) {
+                nextPos = candidate
+                break
+            }
         }
 
+        if (nextPos < 0) return
+        val nextId = all.getOrNull(clockwiseIndices[nextPos])?.participant?.id ?: return
+
         _uiState.value = state.copy(
-            currentTurnParticipantId = nextParticipantId,
+            currentTurnParticipantId = nextId,
             currentTurnNumber = newTurnNumber
         )
         viewModelScope.launch {
-            gameRepository.setCurrentTurnParticipant(gameId, nextParticipantId)
+            gameRepository.setCurrentTurnParticipant(gameId, nextId)
         }
+    }
+
+    fun cyclePlayerTheme(participantId: Long) {
+        val themes = _uiState.value.playerThemes.toMutableMap()
+        val current = themes[participantId] ?: 0
+        themes[participantId] = (current + 1) % 5
+        _uiState.value = _uiState.value.copy(playerThemes = themes)
     }
 
     fun dismissStartDialog() {
@@ -310,17 +330,17 @@ class ActiveGameViewModel(
 
     // ─── Dice ────────────────────────────────────────────────────────────────
 
-    fun rollDice() {
+    fun rollDice(rollerParticipantId: Long? = null) {
         if (_uiState.value.isDiceRolling) return
         viewModelScope.launch {
             val finalResult = Random.nextInt(1, 7)
             _uiState.value = _uiState.value.copy(isDiceRolling = true, diceResult = null)
-            val end = System.currentTimeMillis() + 3000L
+            val end = System.currentTimeMillis() + 2000L
             while (System.currentTimeMillis() < end) {
                 val remaining = end - System.currentTimeMillis()
                 val intervalMs = when {
-                    remaining > 1500 -> 60L
-                    remaining > 600  -> 110L
+                    remaining > 1000 -> 60L
+                    remaining > 400  -> 110L
                     else             -> 200L
                 }
                 _uiState.value = _uiState.value.copy(diceAnimValue = Random.nextInt(1, 7))
@@ -328,6 +348,11 @@ class ActiveGameViewModel(
             }
             _uiState.value = _uiState.value.copy(
                 isDiceRolling = false, diceAnimValue = finalResult, diceResult = finalResult)
+            // Persist roll
+            val pid = rollerParticipantId ?: _uiState.value.currentTurnParticipantId
+            if (pid != null) {
+                gameRepository.logDiceRoll(gameId, pid, finalResult)
+            }
         }
     }
 
@@ -349,12 +374,12 @@ class ActiveGameViewModel(
                 isRandomizing = true, randomOpponentId = null,
                 randomizingDisplayName = "???"
             )
-            val end = System.currentTimeMillis() + 2500L
+            val end = System.currentTimeMillis() + 2000L
             while (System.currentTimeMillis() < end) {
-                val elapsed = 2500L - (end - System.currentTimeMillis())
+                val elapsed = 2000L - (end - System.currentTimeMillis())
                 val intervalMs = when {
-                    elapsed < 800  -> 70L
-                    elapsed < 1700 -> 140L
+                    elapsed < 600  -> 70L
+                    elapsed < 1400 -> 140L
                     else           -> 260L
                 }
                 _uiState.value = _uiState.value.copy(

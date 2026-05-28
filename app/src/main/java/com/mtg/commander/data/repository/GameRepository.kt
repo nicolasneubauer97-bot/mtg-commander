@@ -1,6 +1,7 @@
 package com.mtg.commander.data.repository
 
 import com.mtg.commander.data.dao.*
+import com.mtg.commander.data.entity.DiceRollEntity
 import com.mtg.commander.data.entity.*
 import com.mtg.commander.domain.model.*
 import kotlinx.coroutines.flow.Flow
@@ -12,7 +13,8 @@ class GameRepository(
     private val commanderDamageDao: CommanderDamageDao,
     private val killDao: KillDao,
     private val lifeChangeEventDao: LifeChangeEventDao,
-    private val randomOpponentPickDao: RandomOpponentPickDao
+    private val randomOpponentPickDao: RandomOpponentPickDao,
+    private val diceRollDao: DiceRollDao
 ) {
     fun getAllGames(): Flow<List<Game>> =
         gameDao.getAllGames().map { it.map(GameEntity::toDomain) }
@@ -141,9 +143,19 @@ class GameRepository(
         gameDao.updateGame(game.copy(currentTurnParticipantId = participantId))
     }
 
+    suspend fun logDiceRoll(gameId: Long, participantId: Long, value: Int) {
+        diceRollDao.insert(
+            com.mtg.commander.data.entity.DiceRollEntity(
+                gameId = gameId, rollerParticipantId = participantId, value = value
+            )
+        )
+    }
+
     suspend fun deleteAllLifeChangeEvents() = lifeChangeEventDao.deleteAll()
 
     suspend fun deleteAllRandomOpponentPicks() = randomOpponentPickDao.deleteAll()
+
+    suspend fun deleteAllDiceRolls() = diceRollDao.deleteAll()
 }
 
 private fun GameEntity.toDomain() = Game(

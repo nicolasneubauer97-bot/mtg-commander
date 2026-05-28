@@ -28,6 +28,7 @@ import coil.compose.AsyncImage
 import com.mtg.commander.data.repository.PreconRepository
 import com.mtg.commander.domain.model.PreconDeck
 import com.mtg.commander.ui.theme.*
+import com.mtg.commander.ui.utils.ColorUtils
 import com.mtg.commander.ui.viewmodel.PreconPickerViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -197,9 +198,13 @@ private fun PreconCard(deck: PreconDeck, onClick: () -> Unit) {
             }
             if (deck.colors.isNotBlank()) {
                 Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
                     deck.colors.forEach { c -> ManaSymbol(c) }
                 }
+                Text(ColorUtils.toGerman(deck.colors), fontSize = 9.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

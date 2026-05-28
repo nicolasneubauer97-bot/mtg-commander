@@ -16,6 +16,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.domain.model.Deck
+import com.mtg.commander.ui.utils.ColorUtils
 import com.mtg.commander.ui.viewmodel.DecksViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -147,7 +148,8 @@ private fun DeckListItem(deck: Deck, onEdit: () -> Unit, onDelete: () -> Unit) {
                 Text(deck.commanderName, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.secondary)
                 if (deck.colors.isNotBlank()) {
-                    Text(deck.colors, style = MaterialTheme.typography.bodySmall)
+                    Text(ColorUtils.toGerman(deck.colors), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary)
                 }
                 if (deck.imageUrl.isNotBlank()) {
                     Text("🖼 Precon-Deck", style = MaterialTheme.typography.labelSmall,
@@ -185,7 +187,7 @@ private fun DeckDialog(
                     label = { Text("Commander") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = colors, onValueChange = { colors = it },
-                    label = { Text("Farben (z.B. WUBGR)") }, singleLine = true,
+                    label = { Text("Farben (W=Weiß U=Blau B=Schwarz R=Rot G=Grün)") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth())
             }
         },

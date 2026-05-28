@@ -19,9 +19,10 @@ import com.mtg.commander.data.entity.*
         CommanderDamageEntity::class,
         KillEntity::class,
         LifeChangeEventEntity::class,
-        RandomOpponentPickEntity::class
+        RandomOpponentPickEntity::class,
+        DiceRollEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -34,6 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun killDao(): KillDao
     abstract fun lifeChangeEventDao(): LifeChangeEventDao
     abstract fun randomOpponentPickDao(): RandomOpponentPickDao
+    abstract fun diceRollDao(): DiceRollDao
 
     companion object {
         @Volatile
@@ -114,6 +116,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `dice_rolls` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `gameId` INTEGER NOT NULL,
+                        `rollerParticipantId` INTEGER NOT NULL,
+                        `value` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`gameId`) REFERENCES `games`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_dice_rolls_gameId` ON `dice_rolls` (`gameId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_dice_rolls_rollerParticipantId` ON `dice_rolls` (`rollerParticipantId`)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(
@@ -121,7 +140,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "mtg_commander.db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build().also { INSTANCE = it }
             }
     }

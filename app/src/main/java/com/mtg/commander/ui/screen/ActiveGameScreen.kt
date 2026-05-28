@@ -362,34 +362,33 @@ private fun RotatingLayout(
                     Modifier.fillMaxWidth().height(halfH).align(Alignment.TopCenter))
             }
         }
-        Column(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Hideable center menu
-            Box {
-                if (centerVisible) {
-                    CenterActions(vm, state, isFinished, onBack,
-                        onHide = { centerVisible = false },
-                        modifier = Modifier.size(centerSize))
-                } else {
-                    FilledIconButton(
-                        onClick = { centerVisible = true },
-                        modifier = Modifier.size(36.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
-                    ) {
-                        Icon(Icons.Filled.Visibility, "Menü", Modifier.size(20.dp))
-                    }
+        Box(Modifier.align(Alignment.Center)) {
+            if (centerVisible) {
+                CenterActions(vm, state, isFinished, onBack,
+                    onHide = { centerVisible = false },
+                    modifier = Modifier.size(centerSize))
+            } else {
+                FilledIconButton(
+                    onClick = { centerVisible = true },
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
+                ) {
+                    Icon(Icons.Filled.Visibility, "Menü", Modifier.size(20.dp))
                 }
             }
-            // ALWAYS visible turn indicator – outside the hideable menu
-            Spacer(Modifier.height(4.dp))
-            TurnBar(state = state, isFinished = isFinished, compact = true,
-                onNextPlayer = vm::nextPlayer)
         }
     }
 }
+
+// ─── 5 Panel-Farbschemata ────────────────────────────────────────────────────
+private val PANEL_THEMES = listOf(
+    Color(0xFF0F1320) to Color(0xFFE8E0D0),  // 0 Standard (dunkel)
+    Color(0xFF0A0E1A) to Color(0xFF90CAF9),  // 1 Nacht-Blau
+    Color(0xFF1A0A0A) to Color(0xFFEF9A9A),  // 2 Blut-Rot
+    Color(0xFF0A140A) to Color(0xFFA5D6A7),  // 3 Wald-Grün
+    Color(0xFF160A1A) to Color(0xFFCE93D8),  // 4 Purpur
+)
 
 @Composable
 private fun PlayerCell(
@@ -427,12 +426,16 @@ private fun MiniPlayerPanel(
     val btnH    = (cellH.value * 0.11f).coerceIn(26f, 64f).dp
     val iconSz  = (cellH.value * 0.09f).coerceIn(20f, 44f).dp
 
+    val themeIdx = state.playerThemes[p.id] ?: 0
+    val (themeBase, themeText) = PANEL_THEMES.getOrElse(themeIdx) { PANEL_THEMES[0] }
     val bgColor = when {
-        isWinner       -> WinnerColor.copy(alpha = 0.18f)
-        p.isEliminated -> EliminatedColor.copy(alpha = 0.12f)
+        isWinner       -> WinnerColor.copy(alpha = 0.22f)
+        p.isEliminated -> EliminatedColor.copy(alpha = 0.15f)
         isRandom       -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-        else           -> MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+        else           -> themeBase.copy(alpha = 0.96f)
     }
+    val contentColor = if (isWinner || p.isEliminated || isRandom)
+        MaterialTheme.colorScheme.onSurface else themeText
     val borderColor = when {
         isCurrentTurn  -> MaterialTheme.colorScheme.primary         // bright border for active turn
         isWinner       -> WinnerColor
@@ -480,7 +483,7 @@ private fun MiniPlayerPanel(
                     Text("▶ ", color = MaterialTheme.colorScheme.primary, fontSize = tinyFs)
                 Text(pState.player.name, fontWeight = FontWeight.Bold, fontSize = nameFs,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (p.isEliminated) EliminatedColor else MaterialTheme.colorScheme.onSurface)
+                    color = if (p.isEliminated) EliminatedColor else contentColor)
                 pState.deck?.let { d ->
                     Text(" · ${d.commanderName}", fontSize = tinyFs,
                         color = MaterialTheme.colorScheme.secondary,
@@ -513,7 +516,7 @@ private fun MiniPlayerPanel(
                     color = when {
                         p.currentLife <= 0  -> MaterialTheme.colorScheme.error
                         p.currentLife <= 10 -> MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
-                        else                -> MaterialTheme.colorScheme.onSurface
+                        else                -> contentColor
                     }
                 )
                 if (hasButtons) {
@@ -572,13 +575,31 @@ private fun MiniPlayerPanel(
                         modifier = Modifier.height(btnH),
                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
                     ) { Text("✕", fontSize = smallFs) }
+                    // Theme cycle button
+                    IconButton(onClick = { vm.cyclePlayerTheme(p.id) },
+                        modifier = Modifier.size(btnH)) {
+                        Icon(Icons.Filled.Palette, "Farbschema", Modifier.size(iconSz * 0.7f),
+                            tint = themeText.copy(alpha = 0.7f))
+                    }
+                }
+                // ─── Nächster-Spieler-Button: nur im aktiven Spieler-Panel ────
+                if (isCurrentTurn) {
+                    FilledTonalButton(
+                        onClick = vm::nextPlayer,
+                        modifier = Modifier.fillMaxWidth().height(btnH),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Filled.SkipNext, null, modifier = Modifier.size(smallFs.value.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("Nächster Spieler", fontSize = smallFs)
+                    }
                 }
             }
 
             // ─── Würfel / Randomizer ─────────────────────────────────────────────
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = vm::rollDice,
+                IconButton(onClick = { vm.rollDice(p.id) },
                     modifier = Modifier.size(iconSz), enabled = !state.isDiceRolling) {
                     Icon(Icons.Filled.Casino, "Würfel", Modifier.size(iconSz * 0.75f))
                 }
@@ -725,18 +746,13 @@ private fun ScrollLayout(
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            // Always-visible turn bar for 2-player mode
-            TurnBar(state = state, isFinished = isFinished, compact = false,
-                onNextPlayer = vm::nextPlayer)
-            Column(
-                modifier = Modifier.fillMaxSize()
-                    .verticalScroll(rememberScrollState()).padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                state.participants.forEach { pState ->
-                    FullPlayerCard(vm, state, pState, isFinished)
-                }
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding)
+                .verticalScroll(rememberScrollState()).padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            state.participants.forEach { pState ->
+                FullPlayerCard(vm, state, pState, isFinished)
             }
         }
     }
@@ -860,12 +876,27 @@ private fun FullPlayerCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = 4.dp)) {
-                    IconButton(onClick = vm::rollDice, enabled = !state.isDiceRolling) {
+                    IconButton(onClick = { vm.rollDice(p.id) }, enabled = !state.isDiceRolling) {
                         Icon(Icons.Filled.Casino, "Würfel")
                     }
                     IconButton(onClick = { vm.randomizeOpponent(p.id) },
                         enabled = !state.isRandomizing) {
                         Icon(Icons.Filled.Shuffle, "Zufall")
+                    }
+                    IconButton(onClick = { vm.cyclePlayerTheme(p.id) }) {
+                        Icon(Icons.Filled.Palette, "Farbschema",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                // Nächster-Spieler nur im aktiven Spieler-Panel
+                if (state.currentTurnParticipantId == p.id && !p.isEliminated && !isFinished) {
+                    Spacer(Modifier.height(4.dp))
+                    FilledTonalButton(
+                        onClick = vm::nextPlayer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.SkipNext, null, Modifier.padding(end = 6.dp))
+                        Text("Nächster Spieler")
                     }
                 }
                 if (state.showCommanderDamageFor == p.id) {

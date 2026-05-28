@@ -1,5 +1,6 @@
 package com.mtg.commander.data.repository
 
+import com.mtg.commander.data.dao.DiceRollDao
 import com.mtg.commander.data.dao.GameDao
 import com.mtg.commander.data.dao.GameParticipantDao
 import com.mtg.commander.data.dao.KillDao
@@ -15,7 +16,8 @@ class StatsRepository(
     private val killDao: KillDao,
     private val gameDao: GameDao,
     private val lifeChangeEventDao: LifeChangeEventDao,
-    private val randomOpponentPickDao: RandomOpponentPickDao
+    private val randomOpponentPickDao: RandomOpponentPickDao,
+    private val diceRollDao: DiceRollDao
 ) {
     suspend fun getPlayerStats(playerId: Long, playerName: String): PlayerStats {
         val participants = participantDao.getParticipantsForPlayerWithStatus(playerId, GameStatus.FINISHED)
@@ -109,6 +111,27 @@ class StatsRepository(
                 Pair(gained, lost + (-event.delta))
         }
         return summary
+    }
+
+    // ─── Global damage: attacker → victim → total across all finished games ──
+    suspend fun getGlobalDamageStats(playerNameById: Map<Long, String>): List<Triple<String, String, Int>> {
+        val aggregates = lifeChangeEventDao.getGlobalDamageAggregates()
+        return aggregates.mapNotNull { agg ->
+            val attacker = playerNameById[agg.attackerPlayerId] ?: return@mapNotNull null
+            val victim = playerNameById[agg.victimPlayerId] ?: return@mapNotNull null
+            Triple(attacker, victim, agg.totalDamage)
+        }.sortedByDescending { it.third }
+    }
+
+    // ─── Dice roll stats: playerId → value(1-6) → count ──────────────────────
+    suspend fun getDiceRollStats(playerNameById: Map<Long, String>): Map<String, Map<Int, Int>> {
+        val aggregates = diceRollDao.getAggregates()
+        val result = mutableMapOf<String, MutableMap<Int, Int>>()
+        for (agg in aggregates) {
+            val name = playerNameById[agg.rollerPlayerId] ?: continue
+            result.getOrPut(name) { mutableMapOf() }[agg.value] = agg.rollCount
+        }
+        return result
     }
 
     // Per-game damage dealt by each active-turn participant to others
