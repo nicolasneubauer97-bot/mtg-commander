@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
 import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.ui.theme.EliminatedColor
 import com.mtg.commander.ui.theme.WinnerColor
@@ -455,7 +457,7 @@ private fun MiniPlayerPanel(
         isWinner       -> WinnerColor.copy(alpha = 0.22f)
         p.isEliminated -> EliminatedColor.copy(alpha = 0.15f)
         isRandom       -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-        else           -> themeBase.copy(alpha = 0.96f)
+        else           -> themeBase.copy(alpha = 0.72f)  // reduced so background image shows through
     }
     val contentColor = if (isWinner || p.isEliminated || isRandom)
         MaterialTheme.colorScheme.onSurface else themeText
@@ -469,17 +471,25 @@ private fun MiniPlayerPanel(
     val borderWidth = if (isCurrentTurn || isWinner || isRandom) 2.dp else 1.dp
     val shape = RoundedCornerShape(8.dp)
 
+    val imageUrl = pState.deck?.imageUrl?.takeIf { it.isNotBlank() }
+    val context = LocalContext.current
+    // remember per imageUrl so the request is stable across recompositions
     Box(modifier = Modifier.fillMaxSize().padding(2.dp).clip(shape)
         .border(borderWidth, borderColor, shape)) {
-        // ─── Hintergrundbild (Commander-Art des gewählten Decks) ────────────────
-        val imageUrl = pState.deck?.imageUrl?.takeIf { it.isNotBlank() }
+        // ─── Hintergrundbild — einmal geladen, bleibt das ganze Spiel ─────────
         if (imageUrl != null) {
             AsyncImage(
-                model = imageUrl,
+                model = remember(imageUrl) {
+                    ImageRequest.Builder(context)
+                        .data(imageUrl)
+                        .addHeader("User-Agent", "MTGCommander/1.0 Android")
+                        .addHeader("Accept", "image/*")
+                        .build()
+                },
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-                alpha = 0.22f
+                alpha = 0.35f
             )
         }
 
@@ -848,6 +858,7 @@ private fun FullPlayerCard(
     val isCrown = state.crownPlayerId == p.id
     val isTrash = state.trashPlayerId == p.id
     val imageUrl = pState.deck?.imageUrl?.takeIf { it.isNotBlank() }
+    val context = LocalContext.current
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -866,11 +877,17 @@ private fun FullPlayerCard(
         Box {
             if (imageUrl != null) {
                 AsyncImage(
-                    model = imageUrl,
+                    model = remember(imageUrl) {
+                        ImageRequest.Builder(context)
+                            .data(imageUrl)
+                            .addHeader("User-Agent", "MTGCommander/1.0 Android")
+                            .addHeader("Accept", "image/*")
+                            .build()
+                    },
                     contentDescription = null,
                     modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop,
-                    alpha = 0.18f
+                    alpha = 0.28f
                 )
             }
             Column(Modifier.padding(12.dp)) {

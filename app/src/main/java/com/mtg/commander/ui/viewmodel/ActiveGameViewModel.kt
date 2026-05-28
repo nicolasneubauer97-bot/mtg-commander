@@ -244,7 +244,8 @@ class ActiveGameViewModel(
             3 -> listOf(0, 1, 2)
             else -> listOf(0, 1)
         }.filter { it < count }
-        return if (clockwise) base else base.reversed()
+        // base is physical counter-clockwise on screen; reversed = clockwise
+        return if (clockwise) base.reversed() else base
     }
 
     fun nextPlayer() {
@@ -491,6 +492,21 @@ class ActiveGameViewModel(
 
     fun endGame() {
         viewModelScope.launch {
+            // Commit pending life changes before finishing (same as nextPlayer)
+            val committed = pendingLifeDeltas.toMap()
+            val currentId = _uiState.value.currentTurnParticipantId
+            if (committed.isNotEmpty()) {
+                committed.forEach { (pid, delta) ->
+                    if (delta != 0) {
+                        gameRepository.logLifeChange(
+                            gameId = gameId, targetParticipantId = pid,
+                            activeTurnParticipantId = currentId,
+                            delta = delta, turnNumber = _uiState.value.currentTurnNumber
+                        )
+                    }
+                }
+                pendingLifeDeltas.clear()
+            }
             val game = gameRepository.getGameById(gameId) ?: return@launch
             gameRepository.updateGame(
                 game.copy(status = "FINISHED", endedAt = System.currentTimeMillis()))
