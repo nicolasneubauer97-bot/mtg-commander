@@ -24,6 +24,9 @@ sealed class Screen(val route: String) {
     object GameDetail : Screen("game_detail/{gameId}") {
         fun createRoute(gameId: Long) = "game_detail/$gameId"
     }
+    object PreconPicker : Screen("precon_picker/{playerId}") {
+        fun createRoute(playerId: Long) = "precon_picker/$playerId"
+    }
 }
 
 @Composable
@@ -46,8 +49,15 @@ fun AppNavigation(navController: NavHostController) {
         composable(Screen.Players.route) {
             PlayersScreen(app = app, onBack = { navController.popBackStack() })
         }
-        composable(Screen.Decks.route) {
-            DecksScreen(app = app, onBack = { navController.popBackStack() })
+        composable(Screen.Decks.route) { backStackEntry ->
+            DecksScreen(
+                app = app,
+                onBack = { navController.popBackStack() },
+                onPickPrecon = { playerId ->
+                    navController.navigate(Screen.PreconPicker.createRoute(playerId))
+                },
+                backStackEntry = backStackEntry
+            )
         }
         composable(Screen.NewGame.route) {
             NewGameScreen(
@@ -92,6 +102,34 @@ fun AppNavigation(navController: NavHostController) {
             GameDetailScreen(
                 gameId = gameId,
                 app = app,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            route = Screen.PreconPicker.route,
+            arguments = listOf(navArgument("playerId") { type = NavType.LongType })
+        ) { backStack ->
+            val playerId = backStack.arguments!!.getLong("playerId")
+            PreconPickerScreen(
+                repo = app.preconRepository,
+                onPicked = { precon ->
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("picked_precon_name", precon.name)
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("picked_commander", precon.commanderName)
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("picked_colors", precon.colors)
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("picked_image_url", precon.displayArtUrl)
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("picked_player_id", playerId)
+                    navController.popBackStack()
+                },
                 onBack = { navController.popBackStack() }
             )
         }

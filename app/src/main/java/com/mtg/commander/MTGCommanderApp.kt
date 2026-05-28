@@ -5,6 +5,7 @@ import com.mtg.commander.data.db.AppDatabase
 import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.GameRepository
 import com.mtg.commander.data.repository.PlayerRepository
+import com.mtg.commander.data.repository.PreconRepository
 import com.mtg.commander.data.repository.StatsRepository
 
 class MTGCommanderApp : Application() {
@@ -19,6 +20,7 @@ class MTGCommanderApp : Application() {
             database.killDao()
         )
     }
+    val preconRepository by lazy { PreconRepository(this) }
     val statsRepository by lazy {
         StatsRepository(
             database.gameParticipantDao(),

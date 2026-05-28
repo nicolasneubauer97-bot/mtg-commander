@@ -1,8 +1,15 @@
 package com.mtg.commander.ui.screen
 
+import android.app.Activity
+import android.view.WindowManager
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,7 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -26,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.ui.theme.EliminatedColor
 import com.mtg.commander.ui.theme.WinnerColor
@@ -43,6 +55,14 @@ fun ActiveGameScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val isFinished = state.game?.isFinished == true
 
+    // ─── Screen awake ─────────────────────────────────────────────────────────
+    val context = LocalContext.current
+    DisposableEffect(Unit) {
+        val window = (context as? Activity)?.window
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
+
     if (state.isLoading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
@@ -58,12 +78,23 @@ fun ActiveGameScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
         }
     }
 
-    // ─── Würfel-Overlay ───────────────────────────────────────────────────────
+    // ─── Würfel-Overlay ──────────────────────────────────────────────────────
     if (state.isDiceRolling || state.diceResult != null) {
         DiceOverlay(
             value = state.diceAnimValue,
             isRolling = state.isDiceRolling,
             onDismiss = { if (!state.isDiceRolling) vm.clearDice() }
+        )
+    }
+
+    // ─── Randomizer-Overlay ──────────────────────────────────────────────────
+    if (state.isRandomizing || (state.randomOpponentId != null && !state.isRandomizing)) {
+        val opp = state.participants.find { it.participant.id == state.randomOpponentId }
+        RandomizerOverlay(
+            isAnimating = state.isRandomizing,
+            displayName = if (state.isRandomizing) state.randomizingDisplayName
+                          else opp?.player?.name ?: "",
+            onDismiss = { if (!state.isRandomizing) vm.clearRandomOpponent() }
         )
     }
 
@@ -97,89 +128,199 @@ fun ActiveGameScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
             title = { Text("Bonus-Counter benennen") },
             text = {
                 OutlinedTextField(value = label, onValueChange = { label = it },
-                    label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    label = { Text("Name") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
             },
             confirmButton = { TextButton(onClick = { vm.setOptionalCounterLabel(pid, label) }) { Text("OK") } },
             dismissButton = { TextButton(onClick = vm::dismissCounterLabelDialog) { Text("Abbrechen") } }
         )
     }
-    state.randomOpponentId?.let { id ->
-        val opp = state.participants.find { it.participant.id == id }
-        if (opp != null) {
-            AlertDialog(onDismissRequest = vm::clearRandomOpponent,
-                title = { Text("Zufälliger Gegner") },
+    if (state.showStartDialog) {
+        val starter = state.participants.find { it.participant.id == state.startingPlayerId }
+        if (starter != null) {
+            AlertDialog(
+                onDismissRequest = vm::dismissStartDialog,
+                title = { Text("Wer beginnt?") },
                 text = {
-                    Text(opp.player.name, fontSize = 28.sp, fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    Text("${starter.player.name} beginnt!", fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth())
                 },
-                confirmButton = { TextButton(onClick = vm::clearRandomOpponent) { Text("OK") } }
+                confirmButton = {
+                    TextButton(onClick = vm::dismissStartDialog) { Text("Los!") }
+                }
             )
         }
     }
-    if (state.startingPlayerId != null && !isFinished) {
-        val starter = state.participants.find { it.participant.id == state.startingPlayerId }
-        if (starter != null && state.participants.none { it.participant.isEliminated }) {
-            var shown by remember { mutableStateOf(true) }
-            if (shown) {
-                AlertDialog(onDismissRequest = { shown = false },
-                    title = { Text("Wer beginnt?") },
-                    text = {
-                        Text("${starter.player.name} beginnt!", fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold, textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth())
+}
+
+// ─── Würfel-Overlay mit 3D-Animation ────────────────────────────────────────
+
+@Composable
+private fun DiceOverlay(value: Int, isRolling: Boolean, onDismiss: () -> Unit) {
+    val infiniteTransition = rememberInfiniteTransition(label = "diceRoll")
+    val rotX by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(400, easing = LinearEasing)),
+        label = "rotX"
+    )
+    val rotY by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(550, easing = LinearEasing)),
+        label = "rotY"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.65f))
+            .clickable(enabled = !isRolling, onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .size(140.dp)
+                    .graphicsLayer {
+                        if (isRolling) {
+                            rotationX = rotX
+                            rotationY = rotY
+                            cameraDistance = 12f * density
+                        }
+                        scaleX = if (isRolling) 1.08f else 1f
+                        scaleY = if (isRolling) 1.08f else 1f
                     },
-                    confirmButton = { TextButton(onClick = { shown = false }) { Text("Los!") } }
-                )
+                contentAlignment = Alignment.Center
+            ) {
+                DiceFace(value = value, modifier = Modifier.fillMaxSize())
+            }
+
+            Spacer(Modifier.height(16.dp))
+            if (isRolling) {
+                Text("Würfeln…", color = Color.White, fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp)
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(modifier = Modifier.width(120.dp),
+                    color = MaterialTheme.colorScheme.primary)
+            } else {
+                Text("Ergebnis: $value", color = Color.White, fontWeight = FontWeight.ExtraBold,
+                    fontSize = 22.sp)
+                Spacer(Modifier.height(4.dp))
+                Text("Tippen zum Schließen", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
             }
         }
     }
 }
 
-// ─── Würfel-Overlay ──────────────────────────────────────────────────────────
+@Composable
+private fun DiceFace(value: Int, modifier: Modifier = Modifier) {
+    val bg = Color.White
+    val dotColor = Color(0xFF1A1A1A)
+
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val r = minOf(w, h) * 0.14f
+        val padding = w * 0.12f
+        val inner = w - padding * 2
+
+        // White rounded rectangle
+        drawRoundRect(
+            color = bg,
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.16f),
+        )
+        // Black border
+        drawRoundRect(
+            color = Color.Black.copy(alpha = 0.3f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.16f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = w * 0.025f)
+        )
+
+        // Dot positions: fractions of inner area (0..1), mapped to actual coords
+        val positions = when (value) {
+            1 -> listOf(Offset(0.5f, 0.5f))
+            2 -> listOf(Offset(0.25f, 0.25f), Offset(0.75f, 0.75f))
+            3 -> listOf(Offset(0.25f, 0.25f), Offset(0.5f, 0.5f), Offset(0.75f, 0.75f))
+            4 -> listOf(Offset(0.25f, 0.25f), Offset(0.75f, 0.25f),
+                        Offset(0.25f, 0.75f), Offset(0.75f, 0.75f))
+            5 -> listOf(Offset(0.25f, 0.25f), Offset(0.75f, 0.25f), Offset(0.5f, 0.5f),
+                        Offset(0.25f, 0.75f), Offset(0.75f, 0.75f))
+            6 -> listOf(Offset(0.25f, 0.2f), Offset(0.75f, 0.2f),
+                        Offset(0.25f, 0.5f), Offset(0.75f, 0.5f),
+                        Offset(0.25f, 0.8f), Offset(0.75f, 0.8f))
+            else -> emptyList()
+        }
+        positions.forEach { frac ->
+            drawCircle(
+                color = dotColor,
+                radius = r,
+                center = Offset(padding + frac.x * inner, padding + frac.y * inner)
+            )
+        }
+    }
+}
+
+// ─── Randomizer-Overlay (Slot-Machine) ───────────────────────────────────────
 
 @Composable
-private fun DiceOverlay(value: Int, isRolling: Boolean, onDismiss: () -> Unit) {
-    val scale by animateFloatAsState(
-        targetValue = if (isRolling) 1.1f else 1.0f,
-        animationSpec = infiniteRepeatable(tween(200), RepeatMode.Reverse),
-        label = "diceScale"
-    )
+private fun RandomizerOverlay(isAnimating: Boolean, displayName: String, onDismiss: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.6f))
-            .clickable(enabled = !isRolling, onClick = onDismiss),
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(enabled = !isAnimating, onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
         Card(
-            modifier = Modifier.size(220.dp),
-            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.width(280.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(8.dp)
+            elevation = CardDefaults.cardElevation(12.dp)
         ) {
             Column(
-                modifier = Modifier.fillMaxSize(),
+                Modifier.padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text(
-                    text = "$value",
-                    fontSize = 100.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.scale(if (isRolling) scale else 1f),
-                    color = if (isRolling) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.secondary
-                )
-                if (isRolling) {
-                    Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(0.6f))
-                    Spacer(Modifier.height(8.dp))
-                    Text("Würfeln...", style = MaterialTheme.typography.bodySmall)
+                Icon(Icons.Filled.Shuffle, "Zufall",
+                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
+                Spacer(Modifier.height(12.dp))
+                Text("Zufälliger Gegner", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(16.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                            RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AnimatedContent(
+                        targetState = displayName,
+                        transitionSpec = { fadeIn(tween(80)) togetherWith fadeOut(tween(80)) },
+                        label = "randomName"
+                    ) { name ->
+                        Text(
+                            name,
+                            fontSize = if (isAnimating) 22.sp else 28.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            textAlign = TextAlign.Center,
+                            color = if (isAnimating) MaterialTheme.colorScheme.onSurfaceVariant
+                                    else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+                    }
+                }
+
+                if (isAnimating) {
+                    Spacer(Modifier.height(16.dp))
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(0.7f),
+                        color = MaterialTheme.colorScheme.primary)
                 } else {
-                    Spacer(Modifier.height(4.dp))
-                    Text("Tippen zum Schließen",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(16.dp))
+                    TextButton(onClick = onDismiss) { Text("OK") }
                 }
             }
         }
@@ -190,10 +331,8 @@ private fun DiceOverlay(value: Int, isRolling: Boolean, onDismiss: () -> Unit) {
 
 @Composable
 private fun RotatingLayout(
-    vm: ActiveGameViewModel,
-    state: ActiveGameUiState,
-    isFinished: Boolean,
-    onBack: () -> Unit,
+    vm: ActiveGameViewModel, state: ActiveGameUiState,
+    isFinished: Boolean, onBack: () -> Unit,
     W: Dp, H: Dp
 ) {
     val halfW = W / 2
@@ -266,10 +405,11 @@ private fun MiniPlayerPanel(
     val p = pState.participant
     val isWinner = p.placement == 1
     val isRandom = state.randomOpponentId == p.id
+    val isCrown = state.crownPlayerId == p.id
+    val isTrash = state.trashPlayerId == p.id
     val hasButtons = !p.isEliminated && !isFinished
 
-    // Proportionale Grössen – grosszügige Obergrenzen damit der Platz wirklich genutzt wird
-    val lifeFs  = (cellH.value * 0.22f).coerceIn(28f, 130f).sp
+    val lifeFs  = (cellH.value * 0.30f).coerceIn(32f, 200f).sp
     val nameFs  = (cellH.value * 0.07f).coerceIn(12f, 28f).sp
     val smallFs = (cellH.value * 0.055f).coerceIn(9f, 18f).sp
     val tinyFs  = (cellH.value * 0.044f).coerceIn(8f, 14f).sp
@@ -280,19 +420,34 @@ private fun MiniPlayerPanel(
         isWinner       -> WinnerColor.copy(alpha = 0.18f)
         p.isEliminated -> EliminatedColor.copy(alpha = 0.12f)
         isRandom       -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-        else           -> MaterialTheme.colorScheme.surface
+        else           -> MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
     }
+    val borderColor = when {
+        isWinner       -> WinnerColor
+        p.isEliminated -> EliminatedColor.copy(alpha = 0.35f)
+        isRandom       -> MaterialTheme.colorScheme.primary
+        else           -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+    }
+    val borderWidth = if (isWinner || isRandom) 2.dp else 1.dp
+    val shape = RoundedCornerShape(8.dp)
 
-    Surface(
-        modifier = Modifier.fillMaxSize().padding(2.dp),
-        shape = RoundedCornerShape(8.dp), color = bgColor,
-        border = when {
-            isWinner       -> BorderStroke(2.dp, WinnerColor)
-            p.isEliminated -> BorderStroke(1.dp, EliminatedColor.copy(alpha = 0.35f))
-            isRandom       -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-            else           -> BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f))
+    Box(modifier = Modifier.fillMaxSize().padding(2.dp).clip(shape)
+        .border(borderWidth, borderColor, shape)) {
+        // ─── Hintergrundbild (Commander-Art des gewählten Decks) ────────────────
+        val imageUrl = pState.deck?.imageUrl?.takeIf { it.isNotBlank() }
+        if (imageUrl != null) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                alpha = 0.22f
+            )
         }
-    ) {
+
+        // Overlay für bessere Lesbarkeit
+        Box(modifier = Modifier.fillMaxSize().background(bgColor))
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -300,12 +455,14 @@ private fun MiniPlayerPanel(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            // ─── Name ─────────────────────────────────────────────────────────
+            // ─── Name ───────────────────────────────────────────────────────────
             Row(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
+                if (isCrown) Text("👑 ", fontSize = nameFs, color = WinnerColor)
+                if (isTrash) Text("🗑 ", fontSize = nameFs, color = EliminatedColor)
                 if (isWinner) Text("★ ", color = WinnerColor, fontWeight = FontWeight.Bold, fontSize = nameFs)
                 if (state.startingPlayerId == p.id && !p.isEliminated)
                     Text("▶ ", color = MaterialTheme.colorScheme.primary, fontSize = tinyFs)
@@ -319,7 +476,7 @@ private fun MiniPlayerPanel(
                 }
             }
 
-            // ─── Lebenspunkte – füllt gesamten Restplatz ──────────────────────
+            // ─── Lebenspunkte ────────────────────────────────────────────────────
             Row(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -339,11 +496,11 @@ private fun MiniPlayerPanel(
                 Text(
                     "${p.currentLife}",
                     modifier = Modifier.weight(if (hasButtons) 0.56f else 1f),
-                    fontSize = lifeFs, fontWeight = FontWeight.Bold,
+                    fontSize = lifeFs, fontWeight = FontWeight.ExtraBold,
                     textAlign = TextAlign.Center,
                     color = when {
                         p.currentLife <= 0  -> MaterialTheme.colorScheme.error
-                        p.currentLife <= 10 -> MaterialTheme.colorScheme.error.copy(alpha = 0.75f)
+                        p.currentLife <= 10 -> MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
                         else                -> MaterialTheme.colorScheme.onSurface
                     }
                 )
@@ -360,7 +517,7 @@ private fun MiniPlayerPanel(
                 }
             }
 
-            // ─── Counters ─────────────────────────────────────────────────────
+            // ─── Counters ────────────────────────────────────────────────────────
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 InlineCounter("Gift", pState.poisonCounters, pState.poisonCounters >= 10, smallFs,
@@ -388,7 +545,7 @@ private fun MiniPlayerPanel(
                 }
             }
 
-            // ─── Aktionsbuttons ───────────────────────────────────────────────
+            // ─── Aktionsbuttons ──────────────────────────────────────────────────
             if (hasButtons) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     OutlinedButton(
@@ -406,7 +563,7 @@ private fun MiniPlayerPanel(
                 }
             }
 
-            // ─── Würfel / Randomizer ──────────────────────────────────────────
+            // ─── Würfel / Randomizer ─────────────────────────────────────────────
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = vm::rollDice,
@@ -414,17 +571,18 @@ private fun MiniPlayerPanel(
                     Icon(Icons.Filled.Casino, "Würfel", Modifier.size(iconSz * 0.75f))
                 }
                 IconButton(onClick = { vm.randomizeOpponent(p.id) },
-                    modifier = Modifier.size(iconSz)) {
+                    modifier = Modifier.size(iconSz), enabled = !state.isRandomizing) {
                     Icon(Icons.Filled.Shuffle, "Zufall", Modifier.size(iconSz * 0.75f))
                 }
             }
 
-            // ─── CMD-Schaden-Detail ───────────────────────────────────────────
+            // ─── CMD-Schaden-Detail ──────────────────────────────────────────────
             if (state.showCommanderDamageFor == p.id) {
                 HorizontalDivider(Modifier.padding(vertical = 2.dp))
                 state.participants.filter { it.participant.id != p.id }.forEach { att ->
                     val dmg = pState.commanderDamageReceived[att.participant.id] ?: 0
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()) {
                         Text(att.player.name, fontSize = tinyFs, modifier = Modifier.weight(1f),
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = if (dmg >= 21) MaterialTheme.colorScheme.error
@@ -526,6 +684,10 @@ private fun FullPlayerCard(
 ) {
     val p = pState.participant
     val isWinner = p.placement == 1
+    val isCrown = state.crownPlayerId == p.id
+    val isTrash = state.trashPlayerId == p.id
+    val imageUrl = pState.deck?.imageUrl?.takeIf { it.isNotBlank() }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = when {
@@ -540,111 +702,126 @@ private fun FullPlayerCard(
             else -> null
         }
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (isWinner) Text("★ ", color = WinnerColor, fontWeight = FontWeight.Bold)
-                        if (state.startingPlayerId == p.id && !p.isEliminated)
-                            Text("▶ ", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                        Text(pState.player.name, fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium)
-                    }
-                    pState.deck?.let { d ->
-                        Text("${d.name} · ${d.commanderName}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    } ?: Text("Ohne Deck", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (p.isEliminated) Text("Eliminiert – Platz ${p.placement}",
-                        style = MaterialTheme.typography.bodySmall, color = EliminatedColor)
-                }
+        Box {
+            if (imageUrl != null) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Crop,
+                    alpha = 0.18f
+                )
             }
-            // Leben
-            Row(Modifier.fillMaxWidth(), Arrangement.Center, Alignment.CenterVertically) {
-                if (!p.isEliminated && !isFinished) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        LifeBtn("-10") { vm.updateLife(p.id, -10) }
-                        LifeBtn("-5")  { vm.updateLife(p.id, -5) }
-                        LifeBtn("-1")  { vm.updateLife(p.id, -1) }
-                    }
-                }
-                Text("${p.currentLife}", fontSize = 72.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    color = if (p.currentLife <= 10) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurface)
-                if (!p.isEliminated && !isFinished) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        LifeBtn("+10") { vm.updateLife(p.id, +10) }
-                        LifeBtn("+5")  { vm.updateLife(p.id, +5) }
-                        LifeBtn("+1")  { vm.updateLife(p.id, +1) }
-                    }
-                }
-            }
-            // Counters
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                InlineCounter("Gift", pState.poisonCounters, pState.poisonCounters >= 10, 12.sp,
-                    if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, -1) }) else null,
-                    if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, +1) }) else null)
+            Column(Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    InlineCounter(pState.optionalCounterLabel, pState.optionalCounter, false, 12.sp,
-                        if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, -1) }) else null,
-                        if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, +1) }) else null)
-                    if (!isFinished) {
-                        IconButton(onClick = { vm.showCounterLabelDialog(p.id) },
-                            Modifier.size(28.dp)) {
-                            Icon(Icons.Filled.Edit, "umbenennen", Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isCrown) Text("👑 ", color = WinnerColor, fontWeight = FontWeight.Bold)
+                            if (isTrash) Text("🗑 ", color = EliminatedColor, fontWeight = FontWeight.Bold)
+                            if (isWinner) Text("★ ", color = WinnerColor, fontWeight = FontWeight.Bold)
+                            if (state.startingPlayerId == p.id && !p.isEliminated)
+                                Text("▶ ", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                            Text(pState.player.name, fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium)
+                        }
+                        pState.deck?.let { d ->
+                            Text("${d.name} · ${d.commanderName}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        } ?: Text("Ohne Deck", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (p.isEliminated) Text("Eliminiert – Platz ${p.placement}",
+                            style = MaterialTheme.typography.bodySmall, color = EliminatedColor)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), Arrangement.Center, Alignment.CenterVertically) {
+                    if (!p.isEliminated && !isFinished) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            LifeBtn("-10") { vm.updateLife(p.id, -10) }
+                            LifeBtn("-5")  { vm.updateLife(p.id, -5) }
+                            LifeBtn("-1")  { vm.updateLife(p.id, -1) }
+                        }
+                    }
+                    Text("${p.currentLife}", fontSize = 72.sp, fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = if (p.currentLife <= 10) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurface)
+                    if (!p.isEliminated && !isFinished) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            LifeBtn("+10") { vm.updateLife(p.id, +10) }
+                            LifeBtn("+5")  { vm.updateLife(p.id, +5) }
+                            LifeBtn("+1")  { vm.updateLife(p.id, +1) }
                         }
                     }
                 }
-                val totalCmd = pState.commanderDamageReceived.values.sum()
-                if (totalCmd > 0) Text("CMD: $totalCmd${if (totalCmd >= 21) " ⚠" else ""}",
-                    fontSize = 12.sp, color = if (totalCmd >= 21) MaterialTheme.colorScheme.error
-                                             else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            // Aktionen
-            if (!p.isEliminated && !isFinished) {
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { vm.showCommanderDamagePanel(if (state.showCommanderDamageFor == p.id) null else p.id) },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("CMD-Schaden") }
-                    Button(
-                        onClick = { vm.showEliminateDialog(p.id) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) { Text("Eliminieren") }
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    InlineCounter("Gift", pState.poisonCounters, pState.poisonCounters >= 10, 12.sp,
+                        if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, -1) }) else null,
+                        if (!p.isEliminated && !isFinished) ({ vm.updatePoison(p.id, +1) }) else null)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        InlineCounter(pState.optionalCounterLabel, pState.optionalCounter, false, 12.sp,
+                            if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, -1) }) else null,
+                            if (!p.isEliminated && !isFinished) ({ vm.updateOptionalCounter(p.id, +1) }) else null)
+                        if (!isFinished) {
+                            IconButton(onClick = { vm.showCounterLabelDialog(p.id) },
+                                Modifier.size(28.dp)) {
+                                Icon(Icons.Filled.Edit, "umbenennen", Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    val totalCmd = pState.commanderDamageReceived.values.sum()
+                    if (totalCmd > 0) Text("CMD: $totalCmd${if (totalCmd >= 21) " ⚠" else ""}",
+                        fontSize = 12.sp, color = if (totalCmd >= 21) MaterialTheme.colorScheme.error
+                                                 else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
-            // Würfel + Randomizer (pro Spieler)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                IconButton(onClick = vm::rollDice, enabled = !state.isDiceRolling) {
-                    Icon(Icons.Filled.Casino, "Würfel")
+                if (!p.isEliminated && !isFinished) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { vm.showCommanderDamagePanel(
+                                if (state.showCommanderDamageFor == p.id) null else p.id) },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("CMD-Schaden") }
+                        Button(
+                            onClick = { vm.showEliminateDialog(p.id) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) { Text("Eliminieren") }
+                    }
                 }
-                IconButton(onClick = { vm.randomizeOpponent(p.id) }) {
-                    Icon(Icons.Filled.Shuffle, "Zufall")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp)) {
+                    IconButton(onClick = vm::rollDice, enabled = !state.isDiceRolling) {
+                        Icon(Icons.Filled.Casino, "Würfel")
+                    }
+                    IconButton(onClick = { vm.randomizeOpponent(p.id) },
+                        enabled = !state.isRandomizing) {
+                        Icon(Icons.Filled.Shuffle, "Zufall")
+                    }
                 }
-            }
-            // CMD-Detail
-            if (state.showCommanderDamageFor == p.id) {
-                HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                Text("Commander-Schaden von:", style = MaterialTheme.typography.labelSmall)
-                Spacer(Modifier.height(4.dp))
-                state.participants.filter { it.participant.id != p.id }.forEach { att ->
-                    val dmg = pState.commanderDamageReceived[att.participant.id] ?: 0
-                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(att.player.name, Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (dmg >= 21) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-                        Text("$dmg${if (dmg >= 21) " ⚠" else ""}", fontWeight = FontWeight.Bold,
-                            color = if (dmg >= 21) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-                        if (!p.isEliminated && !isFinished) {
-                            LifeBtn("-") { vm.updateCommanderDamage(att.participant.id, p.id, -1) }
-                            LifeBtn("+") { vm.updateCommanderDamage(att.participant.id, p.id, +1) }
+                if (state.showCommanderDamageFor == p.id) {
+                    HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                    Text("Commander-Schaden von:", style = MaterialTheme.typography.labelSmall)
+                    Spacer(Modifier.height(4.dp))
+                    state.participants.filter { it.participant.id != p.id }.forEach { att ->
+                        val dmg = pState.commanderDamageReceived[att.participant.id] ?: 0
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(att.player.name, Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (dmg >= 21) MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurface)
+                            Text("$dmg${if (dmg >= 21) " ⚠" else ""}", fontWeight = FontWeight.Bold,
+                                color = if (dmg >= 21) MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurface)
+                            if (!p.isEliminated && !isFinished) {
+                                LifeBtn("-") { vm.updateCommanderDamage(att.participant.id, p.id, -1) }
+                                LifeBtn("+") { vm.updateCommanderDamage(att.participant.id, p.id, +1) }
+                            }
                         }
                     }
                 }
@@ -663,7 +840,8 @@ private fun InlineCounter(
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (onMinus != null) {
-            TextButton(onClick = onMinus, modifier = Modifier.size(22.dp), contentPadding = PaddingValues(0.dp)) {
+            TextButton(onClick = onMinus, modifier = Modifier.size(22.dp),
+                contentPadding = PaddingValues(0.dp)) {
                 Text("-", fontSize = labelSize, fontWeight = FontWeight.Bold)
             }
         }
@@ -674,7 +852,8 @@ private fun InlineCounter(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (onPlus != null) {
-            TextButton(onClick = onPlus, modifier = Modifier.size(22.dp), contentPadding = PaddingValues(0.dp)) {
+            TextButton(onClick = onPlus, modifier = Modifier.size(22.dp),
+                contentPadding = PaddingValues(0.dp)) {
                 Text("+", fontSize = labelSize, fontWeight = FontWeight.Bold)
             }
         }

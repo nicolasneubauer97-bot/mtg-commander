@@ -68,20 +68,33 @@ class DecksViewModel(
         _uiState.value = _uiState.value.copy(showAddDialog = false, editingDeck = null)
     }
 
-    fun saveDeck(name: String, commanderName: String, colors: String) {
+    fun saveDeck(name: String, commanderName: String, colors: String, imageUrl: String = "") {
         viewModelScope.launch {
             val player = _uiState.value.selectedPlayer ?: return@launch
             val editing = _uiState.value.editingDeck
             if (editing == null) {
                 deckRepository.insertDeck(
-                    Deck(playerId = player.id, name = name.trim(), commanderName = commanderName.trim(), colors = colors.trim())
+                    Deck(playerId = player.id, name = name.trim(),
+                        commanderName = commanderName.trim(), colors = colors.trim(),
+                        imageUrl = imageUrl)
                 )
             } else {
                 deckRepository.updateDeck(
-                    editing.copy(name = name.trim(), commanderName = commanderName.trim(), colors = colors.trim())
+                    editing.copy(name = name.trim(), commanderName = commanderName.trim(),
+                        colors = colors.trim(), imageUrl = imageUrl.ifBlank { editing.imageUrl })
                 )
             }
             dismissDialog()
+        }
+    }
+
+    fun importPrecon(name: String, commanderName: String, colors: String, imageUrl: String) {
+        viewModelScope.launch {
+            val player = _uiState.value.selectedPlayer ?: return@launch
+            deckRepository.insertDeck(
+                Deck(playerId = player.id, name = name, commanderName = commanderName,
+                    colors = colors, imageUrl = imageUrl)
+            )
         }
     }
 

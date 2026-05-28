@@ -13,15 +13,53 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavBackStackEntry
 import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.domain.model.Deck
 import com.mtg.commander.ui.viewmodel.DecksViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DecksScreen(app: MTGCommanderApp, onBack: () -> Unit) {
+fun DecksScreen(
+    app: MTGCommanderApp,
+    onBack: () -> Unit,
+    onPickPrecon: (playerId: Long) -> Unit,
+    backStackEntry: NavBackStackEntry? = null
+) {
     val vm: DecksViewModel = viewModel(factory = DecksViewModel.factory(app))
     val state by vm.uiState.collectAsStateWithLifecycle()
+
+    // Observe precon picked from the picker screen via SavedStateHandle
+    val pickedName = backStackEntry?.savedStateHandle?.getStateFlow<String?>("picked_precon_name", null)
+        ?.collectAsState()?.value
+    val pickedCommander = backStackEntry?.savedStateHandle?.getStateFlow<String?>("picked_commander", null)
+        ?.collectAsState()?.value
+    val pickedColors = backStackEntry?.savedStateHandle?.getStateFlow<String?>("picked_colors", null)
+        ?.collectAsState()?.value
+    val pickedImageUrl = backStackEntry?.savedStateHandle?.getStateFlow<String?>("picked_image_url", null)
+        ?.collectAsState()?.value
+    val pickedPlayerId = backStackEntry?.savedStateHandle?.getStateFlow<Long?>("picked_player_id", null)
+        ?.collectAsState()?.value
+
+    LaunchedEffect(pickedName, pickedPlayerId) {
+        if (pickedName != null && pickedCommander != null && pickedPlayerId != null) {
+            val player = state.players.find { it.id == pickedPlayerId }
+            if (player != null) {
+                vm.selectPlayer(player)
+                vm.importPrecon(
+                    name = pickedName,
+                    commanderName = pickedCommander,
+                    colors = pickedColors ?: "",
+                    imageUrl = pickedImageUrl ?: ""
+                )
+            }
+            backStackEntry.savedStateHandle.remove<String>("picked_precon_name")
+            backStackEntry.savedStateHandle.remove<String>("picked_commander")
+            backStackEntry.savedStateHandle.remove<String>("picked_colors")
+            backStackEntry.savedStateHandle.remove<String>("picked_image_url")
+            backStackEntry.savedStateHandle.remove<Long>("picked_player_id")
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -34,8 +72,16 @@ fun DecksScreen(app: MTGCommanderApp, onBack: () -> Unit) {
         },
         floatingActionButton = {
             if (state.selectedPlayer != null) {
-                FloatingActionButton(onClick = vm::showAddDialog) {
-                    Icon(Icons.Filled.Add, "Deck hinzufuegen")
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SmallFloatingActionButton(
+                        onClick = { onPickPrecon(state.selectedPlayer!!.id) },
+                        containerColor = MaterialTheme.colorScheme.secondary
+                    ) {
+                        Icon(Icons.Filled.LibraryAdd, "Von Precon hinzufügen")
+                    }
+                    FloatingActionButton(onClick = vm::showAddDialog) {
+                        Icon(Icons.Filled.Add, "Deck hinzufuegen")
+                    }
                 }
             }
         }
@@ -61,7 +107,14 @@ fun DecksScreen(app: MTGCommanderApp, onBack: () -> Unit) {
                 HorizontalDivider()
                 if (state.decks.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Kein Deck fuer diesen Spieler. Tippe auf +.")
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Kein Deck fuer diesen Spieler.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(8.dp))
+                            Text("Tippe auf + für ein eigenes Deck\noder auf 📚 für ein Precon-Deck.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 } else {
                     LazyColumn(
@@ -100,13 +153,20 @@ private fun DeckListItem(deck: Deck, onEdit: () -> Unit, onDelete: () -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(deck.name, style = MaterialTheme.typography.bodyLarge)
-                Text(deck.commanderName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+                Text(deck.commanderName, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary)
                 if (deck.colors.isNotBlank()) {
                     Text(deck.colors, style = MaterialTheme.typography.bodySmall)
                 }
+                if (deck.imageUrl.isNotBlank()) {
+                    Text("🖼 Precon-Deck", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary)
+                }
             }
             IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Bearbeiten") }
-            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Loeschen", tint = MaterialTheme.colorScheme.error) }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Filled.Delete, "Loeschen", tint = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
@@ -127,9 +187,15 @@ private fun DeckDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Deckname") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = commander, onValueChange = { commander = it }, label = { Text("Commander") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = colors, onValueChange = { colors = it }, label = { Text("Farben (z.B. WUBGR)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = name, onValueChange = { name = it },
+                    label = { Text("Deckname") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = commander, onValueChange = { commander = it },
+                    label = { Text("Commander") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = colors, onValueChange = { colors = it },
+                    label = { Text("Farben (z.B. WUBGR)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = {

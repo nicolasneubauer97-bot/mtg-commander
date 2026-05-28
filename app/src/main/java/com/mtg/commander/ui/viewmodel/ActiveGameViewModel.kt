@@ -7,6 +7,7 @@ import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.GameRepository
 import com.mtg.commander.data.repository.PlayerRepository
+import com.mtg.commander.data.repository.StatsRepository
 import com.mtg.commander.domain.model.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -33,25 +34,37 @@ data class ActiveGameUiState(
     val showEliminateDialogFor: Long? = null,
     val showEndGameConfirm: Boolean = false,
     val startingPlayerId: Long? = null,
+    val showStartDialog: Boolean = false,
     val isDiceRolling: Boolean = false,
     val diceAnimValue: Int = 1,
     val diceResult: Int? = null,
+    // Randomizer with slot-machine animation
     val randomOpponentId: Long? = null,
+    val isRandomizing: Boolean = false,
+    val randomizingDisplayName: String = "",
+    // Optional counter labels
     val optionalCounterLabels: Map<Long, String> = emptyMap(),
     val showCounterLabelDialogFor: Long? = null,
     val poisonCounters: Map<Long, Int> = emptyMap(),
-    val optionalCounters: Map<Long, Int> = emptyMap()
+    val optionalCounters: Map<Long, Int> = emptyMap(),
+    // Crown = top leaderboard rank among active players; Trash = bottom
+    val crownPlayerId: Long? = null,
+    val trashPlayerId: Long? = null
 )
 
 class ActiveGameViewModel(
     private val gameId: Long,
     private val gameRepository: GameRepository,
     private val playerRepository: PlayerRepository,
-    private val deckRepository: DeckRepository
+    private val deckRepository: DeckRepository,
+    private val statsRepository: StatsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ActiveGameUiState())
     val uiState: StateFlow<ActiveGameUiState> = _uiState.asStateFlow()
+
+    // Only true on the very first collection – used to decide whether to show start dialog
+    private var isFirstLoad = true
 
     init { loadGame() }
 
@@ -77,15 +90,60 @@ class ActiveGameViewModel(
                         optionalCounterLabel = cur.optionalCounterLabels[p.id] ?: "Bonus"
                     )
                 }
+
                 val startingId = cur.startingPlayerId
                     ?: participantUiStates.randomOrNull()?.participant?.id
+
+                // Show start dialog only for fresh games (started < 30 seconds ago)
+                val isNewGame = game != null &&
+                    (System.currentTimeMillis() - game.startedAt) < 30_000L &&
+                    participants.all { it.currentLife == it.startingLife }
+                val showStart = isFirstLoad && isNewGame
+                isFirstLoad = false
+
+                val (crown, trash) = computeCrownTrash(participantUiStates)
+
                 _uiState.value = cur.copy(
                     game = game, participants = participantUiStates,
                     commanderDamage = damage, kills = kills,
-                    isLoading = false, startingPlayerId = startingId
+                    isLoading = false, startingPlayerId = startingId,
+                    showStartDialog = if (showStart) true else cur.showStartDialog,
+                    crownPlayerId = crown, trashPlayerId = trash
                 )
             }
         }
+        // Load leaderboard ranks in background
+        viewModelScope.launch { refreshLeaderboardRanks() }
+    }
+
+    private suspend fun refreshLeaderboardRanks() {
+        try {
+            val allPlayers = playerRepository.getAllPlayers().firstOrNull() ?: return
+            val stats = allPlayers.map { statsRepository.getPlayerStats(it.id, it.name) }
+                .sortedByDescending { it.winRate }
+            // Map playerId → rank (1 = best)
+            val rankMap = stats.mapIndexed { i, s -> s.playerId to (i + 1) }.toMap()
+            val cur = _uiState.value
+            val (crown, trash) = computeCrownTrash(cur.participants, rankMap)
+            _uiState.value = cur.copy(crownPlayerId = crown, trashPlayerId = trash)
+        } catch (_: Exception) {}
+    }
+
+    private fun computeCrownTrash(
+        participants: List<ParticipantUiState>,
+        rankMap: Map<Long, Int>? = null
+    ): Pair<Long?, Long?> {
+        val active = participants.filter { !it.participant.isEliminated }
+        if (active.size < 2) return Pair(null, null)
+        if (rankMap == null || rankMap.isEmpty()) return Pair(null, null)
+        val withRank = active.mapNotNull { p ->
+            val rank = rankMap[p.player.id] ?: return@mapNotNull null
+            p to rank
+        }
+        if (withRank.isEmpty()) return Pair(null, null)
+        val crown = withRank.minByOrNull { it.second }?.first?.participant?.id
+        val trash = withRank.maxByOrNull { it.second }?.first?.participant?.id
+        return Pair(if (crown != trash) crown else null, if (crown != trash) trash else null)
     }
 
     fun updateLife(participantId: Long, delta: Int) {
@@ -128,8 +186,7 @@ class ActiveGameViewModel(
         val updated = _uiState.value.optionalCounterLabels.toMutableMap()
         updated[participantId] = label.ifBlank { "Bonus" }
         _uiState.value = _uiState.value.copy(
-            optionalCounterLabels = updated,
-            showCounterLabelDialogFor = null,
+            optionalCounterLabels = updated, showCounterLabelDialogFor = null,
             participants = _uiState.value.participants.map { p ->
                 if (p.participant.id == participantId)
                     p.copy(optionalCounterLabel = label.ifBlank { "Bonus" })
@@ -183,6 +240,12 @@ class ActiveGameViewModel(
         }
     }
 
+    fun dismissStartDialog() {
+        _uiState.value = _uiState.value.copy(showStartDialog = false)
+    }
+
+    // ─── Dice ────────────────────────────────────────────────────────────────
+
     fun rollDice() {
         if (_uiState.value.isDiceRolling) return
         viewModelScope.launch {
@@ -192,9 +255,9 @@ class ActiveGameViewModel(
             while (System.currentTimeMillis() < end) {
                 val remaining = end - System.currentTimeMillis()
                 val intervalMs = when {
-                    remaining > 1500 -> 70L
-                    remaining > 600  -> 130L
-                    else             -> 220L
+                    remaining > 1500 -> 60L
+                    remaining > 600  -> 110L
+                    else             -> 200L
                 }
                 _uiState.value = _uiState.value.copy(diceAnimValue = Random.nextInt(1, 7))
                 delay(intervalMs)
@@ -209,16 +272,44 @@ class ActiveGameViewModel(
             _uiState.value = _uiState.value.copy(diceResult = null)
     }
 
+    // ─── Random Opponent (slot-machine animation) ─────────────────────────────
+
     fun randomizeOpponent(myParticipantId: Long) {
+        if (_uiState.value.isRandomizing) return
         val others = _uiState.value.participants
             .filter { it.participant.id != myParticipantId && !it.participant.isEliminated }
-        if (others.isNotEmpty())
-            _uiState.value = _uiState.value.copy(randomOpponentId = others.random().participant.id)
+        if (others.isEmpty()) return
+        val finalOpponent = others.random()
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isRandomizing = true, randomOpponentId = null,
+                randomizingDisplayName = "???"
+            )
+            val end = System.currentTimeMillis() + 2500L
+            while (System.currentTimeMillis() < end) {
+                val elapsed = 2500L - (end - System.currentTimeMillis())
+                val intervalMs = when {
+                    elapsed < 800  -> 70L
+                    elapsed < 1700 -> 140L
+                    else           -> 260L
+                }
+                _uiState.value = _uiState.value.copy(
+                    randomizingDisplayName = others.random().player.name)
+                delay(intervalMs)
+            }
+            _uiState.value = _uiState.value.copy(
+                isRandomizing = false,
+                randomOpponentId = finalOpponent.participant.id,
+                randomizingDisplayName = finalOpponent.player.name
+            )
+        }
     }
 
     fun clearRandomOpponent() {
-        _uiState.value = _uiState.value.copy(randomOpponentId = null)
+        _uiState.value = _uiState.value.copy(randomOpponentId = null, randomizingDisplayName = "")
     }
+
+    // ─── Game end ────────────────────────────────────────────────────────────
 
     fun showEndGameConfirm() {
         _uiState.value = _uiState.value.copy(showEndGameConfirm = true)
@@ -242,7 +333,8 @@ class ActiveGameViewModel(
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
                 ActiveGameViewModel(gameId, app.gameRepository,
-                    app.playerRepository, app.deckRepository) as T
+                    app.playerRepository, app.deckRepository,
+                    app.statsRepository) as T
         }
     }
 }
