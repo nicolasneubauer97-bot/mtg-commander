@@ -92,7 +92,23 @@ fun PreconPickerScreen(
                     }
                 }
                 else -> {
-                    val list = state.filtered
+                    // Bild-Vorlade-Fortschritt
+                if (state.isPreloadingImages) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.weight(1f).height(3.dp),
+                            color = MTGGold
+                        )
+                        Text(state.preloadProgress, fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                val list = state.filtered
                     if (list.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("Keine Decks gefunden.", color = MaterialTheme.colorScheme.onSurfaceVariant)

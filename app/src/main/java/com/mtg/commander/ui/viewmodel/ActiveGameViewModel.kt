@@ -58,7 +58,8 @@ data class ActiveGameUiState(
     // Per-player color theme
     val playerThemes: Map<Long, Int> = emptyMap(),
     // Victory overlay
-    val showVictoryFor: Long? = null
+    val showVictoryFor: Long? = null,
+    val victoryDismissed: Boolean = false
 ) {
     val currentTurnPlayer: ParticipantUiState? get() =
         participants.find { it.participant.id == currentTurnParticipantId }
@@ -126,6 +127,13 @@ class ActiveGameViewModel(
                     else -> null
                 }
 
+                // Reactive victory detection — avoids race condition with eliminatePlayer()
+                val autoVictory: Long? = when {
+                    game?.isFinished == true && !cur.victoryDismissed ->
+                        participantUiStates.find { it.participant.placement == 1 }?.participant?.id
+                    else -> cur.showVictoryFor
+                }
+
                 val (crown, trash) = computeCrownTrash(participantUiStates, emptyMap())
                 _uiState.value = cur.copy(
                     game = game, participants = participantUiStates,
@@ -133,7 +141,8 @@ class ActiveGameViewModel(
                     isLoading = false, startingPlayerId = startingId,
                     showStartDialog = if (showStart) true else cur.showStartDialog,
                     currentTurnParticipantId = currentTurn,
-                    crownPlayerId = crown, trashPlayerId = trash
+                    crownPlayerId = crown, trashPlayerId = trash,
+                    showVictoryFor = autoVictory
                 )
             }
         }
@@ -342,7 +351,7 @@ class ActiveGameViewModel(
     }
 
     fun dismissVictory() {
-        _uiState.value = _uiState.value.copy(showVictoryFor = null)
+        _uiState.value = _uiState.value.copy(showVictoryFor = null, victoryDismissed = true)
     }
 
     fun cyclePlayerTheme(participantId: Long) {
@@ -395,12 +404,10 @@ class ActiveGameViewModel(
                 gameRepository.updateGame(game.copy(
                     status = "FINISHED", endedAt = System.currentTimeMillis()))
             }
-            // Advance turn if eliminated player was active
+            // Advance turn if eliminated player was active (only when game continues)
             if (_uiState.value.currentTurnParticipantId == victimId && winner == null) nextPlayer()
-            _uiState.value = _uiState.value.copy(
-                showEliminateDialogFor = null,
-                showVictoryFor = winner?.id
-            )
+            // showVictoryFor is set reactively in loadGame() when game.isFinished == true
+            _uiState.value = _uiState.value.copy(showEliminateDialogFor = null)
         }
     }
 

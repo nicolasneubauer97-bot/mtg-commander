@@ -52,6 +52,54 @@ class PreconRepository(context: Context) {
         detailed
     }
 
+    /**
+     * Resolves the commander's art_crop URL from Scryfall (JSON → CDN URL).
+     * Result is cached permanently so it's only fetched once per commander.
+     * Returns the direct CDN URL like "https://cards.scryfall.io/art_crop/..."
+     */
+    suspend fun resolveArtUrl(commanderName: String): String = withContext(Dispatchers.IO) {
+        if (commanderName.isBlank()) return@withContext ""
+        val cacheKey = "art_${commanderName.hashCode()}"
+        val cached = prefs.getString(cacheKey, null)
+        if (!cached.isNullOrBlank()) return@withContext cached
+
+        val resolved = try {
+            val enc = java.net.URLEncoder.encode(commanderName, "UTF-8")
+            val url = java.net.URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+            conn.connectTimeout = 8000; conn.readTimeout = 8000
+            if (conn.responseCode == 200) {
+                val json = JSONObject(conn.inputStream.bufferedReader().readText())
+                val imageUris = json.optJSONObject("image_uris")
+                imageUris?.optString("art_crop", "") ?: ""
+            } else ""
+        } catch (_: Exception) { "" }
+
+        if (resolved.isNotBlank()) prefs.edit().putString(cacheKey, resolved).apply()
+        resolved
+    }
+
+    /**
+     * Pre-loads all art URLs for a list of decks that don't have one yet.
+     * Called once after deck list is loaded; updates the cache.
+     */
+    suspend fun preloadArtUrls(decks: List<PreconDeck>): List<PreconDeck> = withContext(Dispatchers.IO) {
+        val result = decks.map { deck ->
+            if (deck.artUrl.isNotBlank() || deck.commanderName.isBlank()) {
+                deck
+            } else {
+                val resolved = resolveArtUrl(deck.commanderName)
+                if (resolved.isNotBlank()) deck.copy(artUrl = resolved) else deck
+            }
+        }
+        // Save updated list to cache
+        if (result.any { it.artUrl.isNotBlank() }) {
+            saveListToCache(result)
+        }
+        result
+    }
+
     suspend fun fetchGermanName(scryfallId: String): String = withContext(Dispatchers.IO) {
         if (scryfallId.isBlank()) return@withContext ""
         val cacheKey = "de_$scryfallId"
