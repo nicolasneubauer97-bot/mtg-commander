@@ -89,20 +89,22 @@ class PreconRepository(private val context: Context) {
     suspend fun resolveArtUrl(commanderName: String, scryfallId: String = ""): String = withContext(Dispatchers.IO) {
         if (commanderName.isBlank()) return@withContext ""
 
-        // 1. Local file already downloaded → return file:// path immediately
+        // 1. Bundled asset (file:///android_asset/...) — already available offline, no download
+        val cacheKey = "art_${commanderName.hashCode()}"
+        val cached = prefs.getString(cacheKey, null)
+        if (!cached.isNullOrBlank() && cached.startsWith("file:///android_asset/")) return@withContext cached
+
+        // 2. Local file previously downloaded to filesDir
         val localFile = localArtFileFor(commanderName)
         if (localFile.exists()) return@withContext localFile.toURI().toString()
 
-        // 2. Cached CDN URL
-        val cacheKey = "art_${commanderName.hashCode()}"
-        val cached = prefs.getString(cacheKey, null)
+        // 3. Cached CDN URL — download to persistent local storage
         if (!cached.isNullOrBlank()) {
-            // Try to download now if we only have the CDN URL
             val downloaded = downloadImageLocally(cached, localFile)
             return@withContext if (downloaded) localFile.toURI().toString() else cached
         }
 
-        // 3. Fetch CDN URL from Scryfall
+        // 4. Fetch CDN URL from Scryfall (for decks not yet in the bundle)
         val cdnUrl = try {
             val url = if (scryfallId.isNotBlank()) {
                 java.net.URL("https://api.scryfall.com/cards/$scryfallId")
@@ -125,10 +127,8 @@ class PreconRepository(private val context: Context) {
         } catch (_: Exception) { "" }
 
         if (cdnUrl.isBlank()) return@withContext ""
-
         prefs.edit().putString(cacheKey, cdnUrl).apply()
 
-        // 4. Download image to persistent local storage
         val downloaded = downloadImageLocally(cdnUrl, localFile)
         if (downloaded) localFile.toURI().toString() else cdnUrl
     }
