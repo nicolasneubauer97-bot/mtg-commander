@@ -159,6 +159,11 @@ private fun PlacementCard(
                     style = MaterialTheme.typography.bodySmall)
                 Text("Leben: ${p.currentLife} / ${p.startingLife}",
                     style = MaterialTheme.typography.bodySmall)
+                if (p.eliminatedAtRound != null && p.placement != 1) {
+                    Text("Eliminiert in Runde ${p.eliminatedAtRound}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
+                }
                 if (lifeSummary != null) {
                     val (gained, lost) = lifeSummary
                     val net = gained - lost

@@ -68,7 +68,7 @@ class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
                             preloadProgress = "Lade Bilder… 0/${decksNeedingArt.size}"
                         )
                         decksNeedingArt.forEachIndexed { idx, deck ->
-                            val resolved = repo.resolveArtUrl(deck.commanderName)
+                            val resolved = repo.resolveArtUrl(deck.commanderName, deck.scryfallId)
                             if (resolved.isNotBlank()) {
                                 val updated = _uiState.value.decks.map {
                                     if (it.fileName == deck.fileName) it.copy(artUrl = resolved) else it

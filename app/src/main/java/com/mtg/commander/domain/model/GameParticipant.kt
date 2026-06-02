@@ -9,5 +9,6 @@ data class GameParticipant(
     val currentLife: Int = 40,
     val placement: Int? = null,
     val isEliminated: Boolean = false,
-    val eliminatedAt: Long? = null
+    val eliminatedAt: Long? = null,
+    val eliminatedAtRound: Int? = null
 )

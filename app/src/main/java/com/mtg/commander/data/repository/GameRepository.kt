@@ -163,6 +163,12 @@ class GameRepository(
         )
     }
 
+    suspend fun getDeckWinStats(deckId: Long): Pair<Int, Int> {
+        val total = participantDao.countFinishedGamesForDeck(deckId)
+        val wins  = participantDao.countWinsForDeck(deckId)
+        return Pair(wins, total)
+    }
+
     suspend fun deleteAllLifeChangeEvents() = lifeChangeEventDao.deleteAll()
 
     suspend fun deleteAllRandomOpponentPicks() = randomOpponentPickDao.deleteAll()
@@ -187,13 +193,15 @@ private fun Game.toEntity() = GameEntity(
 private fun GameParticipantEntity.toDomain() = GameParticipant(
     id = id, gameId = gameId, playerId = playerId, deckId = deckId,
     startingLife = startingLife, currentLife = currentLife,
-    placement = placement, isEliminated = isEliminated, eliminatedAt = eliminatedAt
+    placement = placement, isEliminated = isEliminated, eliminatedAt = eliminatedAt,
+    eliminatedAtRound = eliminatedAtRound
 )
 
 private fun GameParticipant.toEntity() = GameParticipantEntity(
     id = id, gameId = gameId, playerId = playerId, deckId = deckId,
     startingLife = startingLife, currentLife = currentLife,
-    placement = placement, isEliminated = isEliminated, eliminatedAt = eliminatedAt
+    placement = placement, isEliminated = isEliminated, eliminatedAt = eliminatedAt,
+    eliminatedAtRound = eliminatedAtRound
 )
 
 private fun CommanderDamageEntity.toDomain() = CommanderDamage(

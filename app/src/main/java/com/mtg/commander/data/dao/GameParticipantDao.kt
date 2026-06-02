@@ -36,6 +36,20 @@ interface GameParticipantDao {
         status: GameStatus
     ): List<GameParticipantEntity>
 
+    @Query("""
+        SELECT COUNT(*) FROM game_participants gp
+        INNER JOIN games g ON gp.gameId = g.id
+        WHERE gp.deckId = :deckId AND g.status = 'FINISHED'
+    """)
+    suspend fun countFinishedGamesForDeck(deckId: Long): Int
+
+    @Query("""
+        SELECT COUNT(*) FROM game_participants gp
+        INNER JOIN games g ON gp.gameId = g.id
+        WHERE gp.deckId = :deckId AND g.status = 'FINISHED' AND gp.placement = 1
+    """)
+    suspend fun countWinsForDeck(deckId: Long): Int
+
     @Insert
     suspend fun insertParticipant(participant: GameParticipantEntity): Long
 

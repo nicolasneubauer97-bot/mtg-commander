@@ -38,6 +38,7 @@ data class ActiveGameUiState(
     // Turn tracking
     val currentTurnParticipantId: Long? = null,
     val currentTurnNumber: Int = 0,
+    val currentRound: Int = 1,
     val canUndo: Boolean = false,
     // Auto-eliminate: participants already auto-triggered (don't retrigger)
     val autoEliminateTriggered: Set<Long> = emptySet(),
@@ -88,9 +89,10 @@ class ActiveGameViewModel(
     private var isFirstLoad = true
     private val pendingLifeDeltas = mutableMapOf<Long, Int>()
     private val turnHistory = ArrayDeque<TurnHistoryEntry>()
+    private var currentRound = 1
 
     // Elimination undo: (victimParticipantId, lifeAtElimination, killId)
-    private data class EliminationRecord(val victimId: Long, val lifeAtElim: Int, val killId: Long?)
+    private data class EliminationRecord(val victimId: Long, val lifeAtElim: Int, val killId: Long?, val roundAtElim: Int)
     private val eliminationHistory = ArrayDeque<EliminationRecord>()
 
     init { loadGame() }
@@ -300,6 +302,9 @@ class ActiveGameViewModel(
         if (nextPos < 0) return
         val nextId = all.getOrNull(order[nextPos])?.participant?.id ?: return
 
+        // Detect round wrap-around: next position is before or equal to current → new round
+        if (currentPos >= 0 && nextPos <= currentPos) currentRound++
+
         // Commit buffered life changes as LifeChangeEvents
         val committed = pendingLifeDeltas.toMap()
         if (committed.isNotEmpty()) {
@@ -324,6 +329,7 @@ class ActiveGameViewModel(
         _uiState.value = state.copy(
             currentTurnParticipantId = nextId,
             currentTurnNumber = newTurnNumber,
+            currentRound = currentRound,
             canUndo = turnHistory.isNotEmpty()
         )
         viewModelScope.launch {
@@ -368,6 +374,7 @@ class ActiveGameViewModel(
         _uiState.value = state.copy(
             currentTurnParticipantId = entry.playerId,
             currentTurnNumber = (state.currentTurnNumber - 1).coerceAtLeast(0),
+            currentRound = currentRound,
             canUndo = turnHistory.isNotEmpty()
         )
     }
@@ -457,9 +464,10 @@ class ActiveGameViewModel(
             val placement = active.size
             val victim = active.find { it.id == victimId } ?: return@launch
             val lifeAtElim = victim.currentLife
+            val roundAtElim = currentRound
             gameRepository.updateParticipant(
                 victim.copy(isEliminated = true, placement = placement,
-                    eliminatedAt = System.currentTimeMillis())
+                    eliminatedAt = System.currentTimeMillis(), eliminatedAtRound = roundAtElim)
             )
             val killId = gameRepository.insertKill(Kill(gameId = gameId,
                 killerParticipantId = killerId, victimParticipantId = victimId))
@@ -473,7 +481,7 @@ class ActiveGameViewModel(
             }
             // Track for undo (only for non-final eliminations)
             if (winner == null) {
-                eliminationHistory.addLast(EliminationRecord(victimId, lifeAtElim, killId))
+                eliminationHistory.addLast(EliminationRecord(victimId, lifeAtElim, killId, roundAtElim))
             }
             // Advance turn if eliminated player was active (only when game continues)
             if (_uiState.value.currentTurnParticipantId == victimId && winner == null) nextPlayer()
@@ -493,7 +501,7 @@ class ActiveGameViewModel(
             val victim = all.find { it.id == record.victimId } ?: return@launch
             gameRepository.updateParticipant(
                 victim.copy(isEliminated = false, placement = null,
-                    eliminatedAt = null, currentLife = record.lifeAtElim)
+                    eliminatedAt = null, eliminatedAtRound = null, currentLife = record.lifeAtElim)
             )
             // Remove kill record
             if (record.killId != null) {

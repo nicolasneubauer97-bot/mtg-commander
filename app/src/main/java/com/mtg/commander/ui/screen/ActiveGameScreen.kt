@@ -761,6 +761,19 @@ private fun TurnBar(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1
             )
+            // Runden-Badge
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    text = "R${state.currentRound}",
+                    fontSize = if (compact) 9.sp else 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+            }
             Spacer(Modifier.weight(1f))
             FilledTonalButton(
                 onClick = onNextPlayer,
@@ -795,6 +808,14 @@ private fun CenterActions(
             IconButton(onClick = onHide, Modifier.size(24.dp)) {
                 Icon(Icons.Filled.VisibilityOff, "Verstecken", Modifier.fillMaxSize(),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (!isFinished) {
+                Text(
+                    text = "R${state.currentRound}",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
             if (!isFinished) {
                 IconButton(onClick = { if (hasWinner) vm.showEndGameConfirm() },

@@ -66,22 +66,34 @@ class PreconRepository(context: Context) {
      * Result is cached permanently so it's only fetched once per commander.
      * Returns the direct CDN URL like "https://cards.scryfall.io/art_crop/..."
      */
-    suspend fun resolveArtUrl(commanderName: String): String = withContext(Dispatchers.IO) {
+    suspend fun resolveArtUrl(commanderName: String, scryfallId: String = ""): String = withContext(Dispatchers.IO) {
         if (commanderName.isBlank()) return@withContext ""
         val cacheKey = "art_${commanderName.hashCode()}"
         val cached = prefs.getString(cacheKey, null)
         if (!cached.isNullOrBlank()) return@withContext cached
 
         val resolved = try {
-            val enc = java.net.URLEncoder.encode(commanderName, "UTF-8")
-            val url = java.net.URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
+            // Prefer scryfallId lookup (exact, faster) over fuzzy name search
+            val url = if (scryfallId.isNotBlank()) {
+                java.net.URL("https://api.scryfall.com/cards/$scryfallId")
+            } else {
+                val enc = java.net.URLEncoder.encode(commanderName, "UTF-8")
+                java.net.URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
+            }
             val conn = url.openConnection() as java.net.HttpURLConnection
             conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
             conn.connectTimeout = 8000; conn.readTimeout = 8000
             if (conn.responseCode == 200) {
                 val json = JSONObject(conn.inputStream.bufferedReader().readText())
+                // Standard single-face card
                 val imageUris = json.optJSONObject("image_uris")
-                imageUris?.optString("art_crop", "") ?: ""
+                if (imageUris != null) {
+                    imageUris.optString("art_crop", "")
+                } else {
+                    // Double-faced card: art is on card_faces[0]
+                    val faces = json.optJSONArray("card_faces")
+                    faces?.optJSONObject(0)?.optJSONObject("image_uris")?.optString("art_crop", "") ?: ""
+                }
             } else ""
         } catch (_: Exception) { "" }
 

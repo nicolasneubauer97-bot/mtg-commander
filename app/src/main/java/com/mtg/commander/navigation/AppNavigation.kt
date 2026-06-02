@@ -27,6 +27,9 @@ sealed class Screen(val route: String) {
     object PreconPicker : Screen("precon_picker/{playerId}") {
         fun createRoute(playerId: Long) = "precon_picker/$playerId"
     }
+    object GameIntro : Screen("game_intro/{gameId}") {
+        fun createRoute(gameId: Long) = "game_intro/$gameId"
+    }
     object RandomOpponentStats : Screen("random_opponent_stats")
     object GlobalDamageStats : Screen("global_damage_stats")
 }
@@ -68,6 +71,21 @@ fun AppNavigation(navController: NavHostController) {
                 app = app,
                 onBack = { navController.popBackStack() },
                 onGameStarted = { gameId ->
+                    navController.navigate(Screen.GameIntro.createRoute(gameId)) {
+                        popUpTo(Screen.Home.route)
+                    }
+                }
+            )
+        }
+        composable(
+            route = Screen.GameIntro.route,
+            arguments = listOf(navArgument("gameId") { type = NavType.LongType })
+        ) { backStack ->
+            val gameId = backStack.arguments!!.getLong("gameId")
+            GameIntroScreen(
+                gameId = gameId,
+                app = app,
+                onStartGame = {
                     navController.navigate(Screen.ActiveGame.createRoute(gameId)) {
                         popUpTo(Screen.Home.route)
                     }
