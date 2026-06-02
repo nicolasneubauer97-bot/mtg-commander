@@ -118,20 +118,27 @@ def main():
 
         cmd             = commanders[0]
         commander_name  = cmd.get("name", "")
-        scryfall_id     = cmd.get("scryfallId", "")
+        # scryfallId is inside identifiers{} in MTGJSON deck card objects
+        scryfall_id     = (cmd.get("identifiers") or {}).get("scryfallId", "") or cmd.get("scryfallId", "")
         colors          = "".join(cmd.get("colorIdentity") or [])
 
         # Second commander (partner / background)
         cmd2             = commanders[1] if len(commanders) > 1 else {}
         commander_name2  = cmd2.get("name", "")
-        scryfall_id2     = cmd2.get("scryfallId", "")
+        scryfall_id2     = (cmd2.get("identifiers") or {}).get("scryfallId", "") or cmd2.get("scryfallId", "")
 
-        # ── Art crop URL: direct CDN from scryfallId (no API quota needed) ──
+        # ── Art crop URL: direct CDN from scryfallId, fuzzy search as fallback ──
+        front_face_name = commander_name.split(" // ")[0].strip()
         cdn_url = ""
         if scryfall_id:
+            # Construct CDN URL directly — no API call, no rate limiting
             cdn_url = SCRYFALL_CDN.format(scryfall_id[0], scryfall_id[1], scryfall_id)
-        # For meld commanders (e.g. "Gisela // Brisela"), also prepare front-face fallback
-        front_face_name = commander_name.split(" // ")[0].strip()
+        else:
+            # No scryfallId in MTGJSON → use Scryfall fuzzy search to get art CDN URL
+            enc  = urllib.parse.quote(front_face_name)
+            card = get_json(SCRYFALL_FUZZY.format(enc))
+            time.sleep(0.15)
+            cdn_url = art_crop_from_card(card)  # returns a direct CDN URL
 
         # ── German names from Scryfall API ─────────────────────────────────
         commander_name_de  = ""
