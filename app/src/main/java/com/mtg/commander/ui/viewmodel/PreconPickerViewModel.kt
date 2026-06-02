@@ -25,15 +25,14 @@ data class PreconPickerUiState(
         val words = searchQuery.trim().lowercase().split("\\s+".toRegex()).filter { it.isNotEmpty() }
         return decks.filter { deck ->
             val haystack = buildString {
-                append(deck.name); append(' ')
-                append(deck.commanderName); append(' ')
-                append(deck.commanderName2); append(' ')
-                append(deck.commanderNameDe); append(' ')
-                append(deck.commanderNameDe2); append(' ')
-                append(deck.setCode); append(' ')
-                // Extra aliases for well-known alternative names
-                PRECON_ALIASES[deck.commanderName.lowercase()]?.let { append(it); append(' ') }
-                PRECON_ALIASES[deck.commanderName2.lowercase()]?.let { append(it); append(' ') }
+                append(deck.name ?: ""); append(' ')
+                append(deck.commanderName ?: ""); append(' ')
+                append(deck.commanderName2 ?: ""); append(' ')
+                append(deck.commanderNameDe ?: ""); append(' ')
+                append(deck.commanderNameDe2 ?: ""); append(' ')
+                append(deck.setCode ?: ""); append(' ')
+                PRECON_ALIASES[(deck.commanderName ?: "").lowercase()]?.let { append(it); append(' ') }
+                PRECON_ALIASES[(deck.commanderName2 ?: "").lowercase()]?.let { append(it); append(' ') }
             }.lowercase()
             words.all { word -> haystack.contains(word) }
         }

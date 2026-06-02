@@ -13,7 +13,7 @@ import java.net.URL
 
 class PreconRepository(private val context: Context) {
 
-    private val prefs = context.getSharedPreferences("precon_cache_v3", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("precon_cache_v4", Context.MODE_PRIVATE)
     private val gson = Gson()
     private val cacheMaxAgeMs = 7 * 24 * 60 * 60 * 1000L  // 7 Tage
     private val localArtDir: File get() = File(context.filesDir, "precon_art").also { it.mkdirs() }

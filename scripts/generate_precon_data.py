@@ -18,7 +18,13 @@ MTGJSON_DECKLIST = "https://mtgjson.com/api/v5/DeckList.json"
 MTGJSON_DECK     = "https://mtgjson.com/api/v5/decks/{}.json"
 SCRYFALL_BY_ID   = "https://api.scryfall.com/cards/{}"
 SCRYFALL_FUZZY   = "https://api.scryfall.com/cards/named?fuzzy={}"
-HEADERS = {"User-Agent": "MTGCommander/1.0 (build-script)"}
+# Direct CDN URL — bypasses Scryfall API rate-limits on CI runners
+# Format: https://cards.scryfall.io/art_crop/front/{c1}/{c2}/{uuid}.jpg
+SCRYFALL_CDN     = "https://cards.scryfall.io/art_crop/front/{}/{}/{}.jpg"
+HEADERS = {
+    "User-Agent": "MTGCommander/1.0 (build-script; contact nicolas.neubauer97@gmail.com)",
+    "Accept": "application/json"
+}
 
 JSON_OUT  = "app/src/main/assets/precon_decks.json"
 ART_DIR   = "app/src/main/assets/precon_art"
@@ -47,11 +53,12 @@ def art_crop_from_card(card):
     return ""
 
 
-def download_image(url, dest_path, retries=2):
+def download_image(url, dest_path, retries=2, headers=None):
     """Downloads image from url to dest_path. Returns True on success."""
+    hdrs = headers or HEADERS
     for attempt in range(retries + 1):
         try:
-            req = urllib.request.Request(url, headers=HEADERS)
+            req = urllib.request.Request(url, headers=hdrs)
             with urllib.request.urlopen(req, timeout=20) as r:
                 data = r.read()
             if len(data) < 1000:
@@ -119,30 +126,32 @@ def main():
         commander_name2  = cmd2.get("name", "")
         scryfall_id2     = cmd2.get("scryfallId", "")
 
-        # ── Art crop URL from Scryfall (primary commander) ─────────────────
+        # ── Art crop URL: try direct CDN first (no API quota), then API ──────
         cdn_url = ""
         if scryfall_id:
-            card    = get_json(SCRYFALL_BY_ID.format(scryfall_id))
-            time.sleep(0.1)
-            cdn_url = art_crop_from_card(card)
+            # CDN URL is deterministic from the UUID — no API call needed
+            cdn_url = SCRYFALL_CDN.format(scryfall_id[0], scryfall_id[1], scryfall_id)
 
         if not cdn_url and commander_name:
-            enc     = urllib.parse.quote(commander_name)
-            card    = get_json(SCRYFALL_FUZZY.format(enc))
-            time.sleep(0.1)
+            # Fallback: API fuzzy search (slower, may be rate-limited)
+            enc  = urllib.parse.quote(commander_name)
+            card = get_json(SCRYFALL_FUZZY.format(enc))
+            time.sleep(0.15)
             cdn_url = art_crop_from_card(card)
 
-        # ── German names from Scryfall ─────────────────────────────────────
+        # ── German names from Scryfall API ─────────────────────────────────
         commander_name_de  = ""
         commander_name_de2 = ""
         if scryfall_id:
             de = get_json(f"{SCRYFALL_BY_ID.format(scryfall_id)}?lang=de")
-            time.sleep(0.08)
-            commander_name_de = (de or {}).get("printed_name", "") if de and de.get("lang") == "de" else ""
+            time.sleep(0.12)
+            if de and de.get("lang") == "de":
+                commander_name_de = de.get("printed_name", "")
         if scryfall_id2:
             de2 = get_json(f"{SCRYFALL_BY_ID.format(scryfall_id2)}?lang=de")
-            time.sleep(0.08)
-            commander_name_de2 = (de2 or {}).get("printed_name", "") if de2 and de2.get("lang") == "de" else ""
+            time.sleep(0.12)
+            if de2 and de2.get("lang") == "de":
+                commander_name_de2 = de2.get("printed_name", "")
 
         # ── Download image into assets ─────────────────────────────────────
         art_url = ""
@@ -154,7 +163,9 @@ def main():
                 art_url = ASSET_URI.format(file_name)
                 print(f"{commander_name} [cached]")
             else:
-                ok = download_image(cdn_url, img_path)
+                # Use IMAGE_HEADERS (no Accept: application/json — it's a binary download)
+                img_headers = {"User-Agent": HEADERS["User-Agent"]}
+                ok = download_image(cdn_url, img_path, headers=img_headers)
                 if ok:
                     art_url = ASSET_URI.format(file_name)
                     print(f"{commander_name} [dl ok]")
