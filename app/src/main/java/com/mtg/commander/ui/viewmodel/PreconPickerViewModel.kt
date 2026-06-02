@@ -56,7 +56,9 @@ class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
                     }
                 }
 
-                // Phase 2: Pre-load art URLs — once resolved, stored permanently in cache
+                // Phase 2: Download missing art images locally (persistent offline cache)
+                // If artUrls are pre-filled from the assets bundle, this is fast (just download).
+                // If not (new decks), it also resolves from Scryfall first.
                 launch {
                     kotlinx.coroutines.delay(500)
                     val decksNeedingArt = _uiState.value.decks.filter {
@@ -78,7 +80,7 @@ class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
                                     preloadProgress = "Lade Bilder… ${idx + 1}/${decksNeedingArt.size}"
                                 )
                             }
-                            kotlinx.coroutines.delay(120) // polite rate limiting for Scryfall
+                            kotlinx.coroutines.delay(120)
                         }
                         _uiState.value = _uiState.value.copy(
                             isPreloadingImages = false, preloadProgress = ""

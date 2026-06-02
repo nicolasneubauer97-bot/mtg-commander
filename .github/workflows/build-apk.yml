@@ -54,6 +54,11 @@ jobs:
       - name: Generate Gradle Wrapper JAR
         run: gradle wrapper --gradle-version=8.4
 
+      - name: Generate precon deck data (MTGJSON + Scryfall)
+        run: python3 scripts/generate_precon_data.py
+        timeout-minutes: 20
+        continue-on-error: true
+
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace --info 2>&1 | tee build-output.txt; exit ${PIPESTATUS[0]}
         env:

@@ -250,34 +250,33 @@ private fun IntroPlayerCard(info: IntroPlayerInfo) {
                 }
             }
 
-            // Win rate badge
-            if (info.totalGames > 0) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    val pct = (info.winRate * 100).toInt()
-                    val badgeColor = when {
-                        pct >= 50 -> MTGGold
-                        pct >= 30 -> Color(0xFF90CAF9)
-                        else      -> MTGOnSurfaceVar
-                    }
-                    Text(
-                        "$pct%",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = badgeColor
-                    )
-                    Text(
-                        "${info.wins}/${info.totalGames}",
-                        fontSize = 10.sp,
-                        color = MTGOnSurfaceVar,
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        "Siege",
-                        fontSize = 9.sp,
-                        color = MTGOnSurfaceVar,
-                        textAlign = TextAlign.Center
-                    )
+            // Win rate badge — always shown (0% for new decks)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                val pct = if (info.totalGames > 0) (info.winRate * 100).toInt() else 0
+                val badgeColor = when {
+                    info.totalGames == 0 -> MTGOnSurfaceVar
+                    pct >= 50            -> MTGGold
+                    pct >= 30            -> Color(0xFF90CAF9)
+                    else                 -> MTGOnSurfaceVar
                 }
+                Text(
+                    "$pct%",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = badgeColor
+                )
+                Text(
+                    "${info.wins}/${info.totalGames}",
+                    fontSize = 10.sp,
+                    color = MTGOnSurfaceVar,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    "Siege",
+                    fontSize = 9.sp,
+                    color = MTGOnSurfaceVar,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }

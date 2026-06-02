@@ -711,6 +711,13 @@ private fun VictoryOverlay(winnerName: String, onShowDetail: () -> Unit, onDismi
                 Spacer(Modifier.height(8.dp))
                 Text(winnerName, style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                if (winnerName.trim().lowercase() == "dave") {
+                    Spacer(Modifier.height(4.dp))
+                    Text("sicher wieder bschisse 🤨",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center)
+                }
                 Spacer(Modifier.height(24.dp))
                 Button(
                     onClick = onShowDetail,
