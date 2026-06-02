@@ -10,7 +10,9 @@ data class PreconDeck(
     val commanderNameDe: String = "",
     val colors: String = "",
     val scryfallId: String = "",
-    val artUrl: String = ""
+    val artUrl: String = "",
+    val commanderName2: String = "",    // second partner / background commander
+    val commanderNameDe2: String = ""   // German name of second commander
 ) {
     val displayArtUrl: String get() = when {
         artUrl.isNotBlank() -> artUrl

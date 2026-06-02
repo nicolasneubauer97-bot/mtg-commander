@@ -19,14 +19,70 @@ data class PreconPickerUiState(
     val networkWarning: Boolean = false,
     val searchQuery: String = ""
 ) {
-    val filtered: List<PreconDeck> get() = if (searchQuery.isBlank()) decks else
-        decks.filter {
-            it.name.contains(searchQuery, ignoreCase = true) ||
-            it.commanderName.contains(searchQuery, ignoreCase = true) ||
-            it.commanderNameDe.contains(searchQuery, ignoreCase = true) ||
-            it.setCode.contains(searchQuery, ignoreCase = true)
+    val filtered: List<PreconDeck> get() {
+        if (searchQuery.isBlank()) return decks
+        // Split query into words — every word must appear somewhere in the deck's data
+        val words = searchQuery.trim().lowercase().split("\\s+".toRegex()).filter { it.isNotEmpty() }
+        return decks.filter { deck ->
+            val haystack = buildString {
+                append(deck.name); append(' ')
+                append(deck.commanderName); append(' ')
+                append(deck.commanderName2); append(' ')
+                append(deck.commanderNameDe); append(' ')
+                append(deck.commanderNameDe2); append(' ')
+                append(deck.setCode); append(' ')
+                // Extra aliases for well-known alternative names
+                PRECON_ALIASES[deck.commanderName.lowercase()]?.let { append(it); append(' ') }
+                PRECON_ALIASES[deck.commanderName2.lowercase()]?.let { append(it); append(' ') }
+            }.lowercase()
+            words.all { word -> haystack.contains(word) }
         }
+    }
 }
+
+/**
+ * Alias map: commanderName.lowercase() → extra search terms.
+ * Add entries when a commander is commonly known by a different name,
+ * nickname, or when players confuse a card in the deck for the commander.
+ */
+val PRECON_ALIASES: Map<String, String> = mapOf(
+    // Bloomburrow
+    "hazel of the rootbloom"          to "squirreled away eichhörnchen",
+    "zinnia, valley's voice"          to "family matters zinnia",
+    "warren soultrader"               to "animated army warren",
+    "bello, bard of the brambles"     to "peace offering bello",
+    // Duskmourn
+    "zimone, all-questioning"         to "endless punishment zimone",
+    "the haunting of heretat"         to "jump scare horror",
+    // Doctor Who
+    "the fourth doctor"               to "blast from the past vierter doktor",
+    "the tenth doctor"                to "paradox power zehnter doktor",
+    "davros, dalek creator"           to "masters of evil dalek",
+    "the thirteenth doctor"           to "timey wimey dreizehnte",
+    // Commander Legends
+    "aesi, tyrant of gyre strait"     to "reap the tides flut",
+    "wyleth, soul of steel"           to "arm for battle stahl",
+    // Kaldheim
+    "lathril, blade of the elves"     to "elven empire elfen elfenreich",
+    "ranar the ever-watchful"         to "phantom premonition geist",
+    // Popular nicknames
+    "atraxa, praetors' voice"         to "breed lethality praetor gift",
+    "edgar markov"                    to "vampiric bloodlust vampir vampyr eddi",
+    "the ur-dragon"                   to "draconic domination drache ur-drache",
+    "breya, etherium shaper"          to "invent superiority artefakt artefakte",
+    "yidris, maelstrom wielder"       to "entropic uprising chaos",
+    "nekusar, the mindrazer"          to "mind seize räder gedanken",
+    "kaalia of the vast"              to "heavenly inferno engel dämon drachen",
+    "ghave, guru of spores"           to "eternal vigilance pilz token sporen",
+    "the mimeoplasm"                  to "planted fear zombie imitator",
+    "oloro, ageless ascetic"          to "eternal bargain lebens gain",
+    "meren of clan nel toth"          to "plunder the graves friedhof selbstmühle",
+    "mizzix of the izmagnus"          to "seize control zauberer instant",
+    "inalla, archmage ritualist"      to "arcane wizardry zauberer ritual",
+    "nicol bolas, the ravager"        to "faceless menace morphe",
+    "prosper, tome-bound"             to "planar portal tiefling exil",
+    "wilhelt, the rotcleaver"         to "undead unleashed zombie untot",
+)
 
 class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
 
@@ -88,7 +144,7 @@ class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
                     }
                 }
 
-                // Phase 3: German names (optional, for MTGJSON decks with scryfallId)
+                // Phase 3: German names (skipped if already in asset bundle)
                 launch {
                     list.filter { it.scryfallId.isNotBlank() && it.commanderNameDe.isBlank() }.forEach { deck ->
                         val de = repo.fetchGermanName(deck.scryfallId)

@@ -109,12 +109,17 @@ def main():
             skipped += 1
             continue
 
-        cmd            = commanders[0]
-        commander_name = cmd.get("name", "")
-        scryfall_id    = cmd.get("scryfallId", "")
-        colors         = "".join(cmd.get("colorIdentity") or [])
+        cmd             = commanders[0]
+        commander_name  = cmd.get("name", "")
+        scryfall_id     = cmd.get("scryfallId", "")
+        colors          = "".join(cmd.get("colorIdentity") or [])
 
-        # ── Art crop URL from Scryfall ─────────────────────────────────────
+        # Second commander (partner / background)
+        cmd2             = commanders[1] if len(commanders) > 1 else {}
+        commander_name2  = cmd2.get("name", "")
+        scryfall_id2     = cmd2.get("scryfallId", "")
+
+        # ── Art crop URL from Scryfall (primary commander) ─────────────────
         cdn_url = ""
         if scryfall_id:
             card    = get_json(SCRYFALL_BY_ID.format(scryfall_id))
@@ -126,6 +131,18 @@ def main():
             card    = get_json(SCRYFALL_FUZZY.format(enc))
             time.sleep(0.1)
             cdn_url = art_crop_from_card(card)
+
+        # ── German names from Scryfall ─────────────────────────────────────
+        commander_name_de  = ""
+        commander_name_de2 = ""
+        if scryfall_id:
+            de = get_json(f"{SCRYFALL_BY_ID.format(scryfall_id)}?lang=de")
+            time.sleep(0.08)
+            commander_name_de = (de or {}).get("printed_name", "") if de and de.get("lang") == "de" else ""
+        if scryfall_id2:
+            de2 = get_json(f"{SCRYFALL_BY_ID.format(scryfall_id2)}?lang=de")
+            time.sleep(0.08)
+            commander_name_de2 = (de2 or {}).get("printed_name", "") if de2 and de2.get("lang") == "de" else ""
 
         # ── Download image into assets ─────────────────────────────────────
         art_url = ""
@@ -151,14 +168,16 @@ def main():
             print(f"{commander_name} [no art URL]")
 
         result.append({
-            "fileName":        file_name,
-            "name":            name,
-            "setCode":         set_code,
-            "commanderName":   commander_name,
-            "commanderNameDe": "",
-            "colors":          colors,
-            "scryfallId":      scryfall_id,
-            "artUrl":          art_url
+            "fileName":         file_name,
+            "name":             name,
+            "setCode":          set_code,
+            "commanderName":    commander_name,
+            "commanderNameDe":  commander_name_de,
+            "colors":           colors,
+            "scryfallId":       scryfall_id,
+            "artUrl":           art_url,
+            "commanderName2":   commander_name2,
+            "commanderNameDe2": commander_name_de2
         })
 
     # ── Write JSON ─────────────────────────────────────────────────────────

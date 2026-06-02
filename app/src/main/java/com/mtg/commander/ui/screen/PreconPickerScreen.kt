@@ -242,6 +242,17 @@ private fun PreconCard(deck: PreconDeck, onClick: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                // Second commander (partner / background)
+                if (deck.commanderName2.isNotBlank()) {
+                    val displayName2 = if (deck.commanderNameDe2.isNotBlank()) deck.commanderNameDe2 else deck.commanderName2
+                    Text(
+                        "& $displayName2",
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.75f)
+                    )
+                }
             } else {
                 Text("Lade…", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
