@@ -126,30 +126,12 @@ def main():
         commander_name2  = cmd2.get("name", "")
         scryfall_id2     = cmd2.get("scryfallId", "")
 
-        # ── Art crop URL: try direct CDN first (no API quota), then API ──────
+        # ── Art crop URL: direct CDN from scryfallId (no API quota needed) ──
         cdn_url = ""
         if scryfall_id:
-            # CDN URL is deterministic from the UUID — no API call needed
             cdn_url = SCRYFALL_CDN.format(scryfall_id[0], scryfall_id[1], scryfall_id)
-
-        # Verify the CDN URL is reachable (meld/special cards may 404)
-        if cdn_url:
-            try:
-                req = urllib.request.Request(cdn_url, method="HEAD",
-                    headers={"User-Agent": HEADERS["User-Agent"]})
-                with urllib.request.urlopen(req, timeout=8) as r:
-                    if r.status != 200:
-                        cdn_url = ""
-            except Exception:
-                cdn_url = ""
-
-        if not cdn_url:
-            # For meld/DFC commanders (name contains " // "), use only the front face name
-            lookup_name = commander_name.split(" // ")[0].strip()
-            enc  = urllib.parse.quote(lookup_name)
-            card = get_json(SCRYFALL_FUZZY.format(enc))
-            time.sleep(0.15)
-            cdn_url = art_crop_from_card(card)
+        # For meld commanders (e.g. "Gisela // Brisela"), also prepare front-face fallback
+        front_face_name = commander_name.split(" // ")[0].strip()
 
         # ── German names from Scryfall API ─────────────────────────────────
         commander_name_de  = ""
@@ -171,24 +153,37 @@ def main():
             img_path = os.path.join(ART_DIR, f"{file_name}.jpg")
             already  = os.path.exists(img_path) and os.path.getsize(img_path) > 1000
 
+            img_headers = {"User-Agent": HEADERS["User-Agent"]}
             if already:
                 art_url = ASSET_URI.format(file_name)
                 print(f"{commander_name} [cached]")
             else:
-                # Use IMAGE_HEADERS (no Accept: application/json — it's a binary download)
-                img_headers = {"User-Agent": HEADERS["User-Agent"]}
                 ok = download_image(cdn_url, img_path, headers=img_headers)
                 if ok:
                     art_url = ASSET_URI.format(file_name)
                     print(f"{commander_name} [dl ok]")
                 else:
-                    art_url = cdn_url   # fallback: keep CDN URL
-                    no_art += 1
-                    print(f"{commander_name} [dl failed → CDN fallback]")
+                    # CDN failed (meld/special card) → try Scryfall API with front-face name
+                    enc  = urllib.parse.quote(front_face_name)
+                    card = get_json(SCRYFALL_FUZZY.format(enc))
+                    time.sleep(0.15)
+                    fallback_cdn = art_crop_from_card(card)
+                    if fallback_cdn:
+                        ok2 = download_image(fallback_cdn, img_path, headers=img_headers)
+                        if ok2:
+                            art_url = ASSET_URI.format(file_name)
+                            print(f"{commander_name} [meld-fallback ok]")
+                        else:
+                            art_url = fallback_cdn
+                            no_art += 1
+                            print(f"{commander_name} [both failed → CDN URL]")
+                    else:
+                        no_art += 1
+                        print(f"{commander_name} [no art URL]")
             time.sleep(0.05)
         else:
             no_art += 1
-            print(f"{commander_name} [no art URL]")
+            print(f"{commander_name} [no scryfallId]")
 
         result.append({
             "fileName":         file_name,

@@ -54,6 +54,12 @@ jobs:
       - name: Generate Gradle Wrapper JAR
         run: gradle wrapper --gradle-version=8.4
 
+      - name: Cache precon art images
+        uses: actions/cache@v4
+        with:
+          path: app/src/main/assets/precon_art
+          key: precon-art-v1
+
       - name: Generate precon deck data + download art images
         run: python3 scripts/generate_precon_data.py
         timeout-minutes: 40
