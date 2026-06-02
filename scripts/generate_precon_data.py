@@ -132,9 +132,21 @@ def main():
             # CDN URL is deterministic from the UUID — no API call needed
             cdn_url = SCRYFALL_CDN.format(scryfall_id[0], scryfall_id[1], scryfall_id)
 
-        if not cdn_url and commander_name:
-            # Fallback: API fuzzy search (slower, may be rate-limited)
-            enc  = urllib.parse.quote(commander_name)
+        # Verify the CDN URL is reachable (meld/special cards may 404)
+        if cdn_url:
+            try:
+                req = urllib.request.Request(cdn_url, method="HEAD",
+                    headers={"User-Agent": HEADERS["User-Agent"]})
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    if r.status != 200:
+                        cdn_url = ""
+            except Exception:
+                cdn_url = ""
+
+        if not cdn_url:
+            # For meld/DFC commanders (name contains " // "), use only the front face name
+            lookup_name = commander_name.split(" // ")[0].strip()
+            enc  = urllib.parse.quote(lookup_name)
             card = get_json(SCRYFALL_FUZZY.format(enc))
             time.sleep(0.15)
             cdn_url = art_crop_from_card(card)
