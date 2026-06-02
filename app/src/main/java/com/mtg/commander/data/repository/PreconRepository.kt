@@ -18,23 +18,32 @@ class PreconRepository(context: Context) {
 
     // ─── Public API ──────────────────────────────────────────────────────────
 
+    data class DeckListResult(val decks: List<PreconDeck>, val networkFailed: Boolean)
+
     /** Returns the full deck list. Refreshes from MTGJSON if cache is older than 7 days. */
-    suspend fun getDeckList(forceRefresh: Boolean = false): List<PreconDeck> = withContext(Dispatchers.IO) {
+    suspend fun getDeckList(forceRefresh: Boolean = false): DeckListResult = withContext(Dispatchers.IO) {
         val cacheAge = prefs.getLong("cache_timestamp", 0L)
         val isStale = System.currentTimeMillis() - cacheAge > cacheMaxAgeMs
 
         if (!forceRefresh && !isStale) {
             val cached = loadListFromCache()
-            if (cached.isNotEmpty()) return@withContext cached
+            if (cached.isNotEmpty()) return@withContext DeckListResult(cached, networkFailed = false)
         }
 
-        val fetched = fetchMtgJsonDeckList()
+        val (fetched, networkOk) = fetchMtgJsonDeckList()
         val combined = (ALL_STATIC_DECKS + fetched)
             .distinctBy { it.fileName }
             .sortedBy { it.name }
-        saveListToCache(combined)
-        prefs.edit().putLong("cache_timestamp", System.currentTimeMillis()).apply()
-        combined
+        if (networkOk) {
+            saveListToCache(combined)
+            prefs.edit().putLong("cache_timestamp", System.currentTimeMillis()).apply()
+        } else {
+            // On network failure, fall back to existing cache if available, otherwise use static only
+            val staleCache = loadListFromCache()
+            val fallback = if (staleCache.isNotEmpty()) staleCache else combined
+            return@withContext DeckListResult(fallback, networkFailed = true)
+        }
+        DeckListResult(combined, networkFailed = false)
     }
 
     suspend fun loadDeckDetails(deck: PreconDeck): PreconDeck = withContext(Dispatchers.IO) {
@@ -127,13 +136,13 @@ class PreconRepository(context: Context) {
 
     // ─── MTGJSON Fetching ────────────────────────────────────────────────────
 
-    private fun fetchMtgJsonDeckList(): List<PreconDeck> {
+    private fun fetchMtgJsonDeckList(): Pair<List<PreconDeck>, Boolean> {
         return try {
             val url = URL("https://mtgjson.com/api/v5/DeckList.json")
             val conn = url.openConnection() as HttpURLConnection
             conn.setRequestProperty("User-Agent", "MTGCommander/1.0")
             conn.connectTimeout = 10000; conn.readTimeout = 10000
-            if (conn.responseCode != 200) return emptyList()
+            if (conn.responseCode != 200) return Pair(emptyList(), false)
 
             val root = JSONObject(conn.inputStream.bufferedReader().readText())
             val data = root.getJSONArray("data")
@@ -150,8 +159,8 @@ class PreconRepository(context: Context) {
                     setCode = item.optString("code", "")
                 ))
             }
-            result
-        } catch (_: Exception) { emptyList() }
+            Pair(result, true)
+        } catch (_: Exception) { Pair(emptyList(), false) }
     }
 
     private fun fetchMtgJsonDeckDetails(deck: PreconDeck): PreconDeck {
@@ -250,6 +259,12 @@ class PreconRepository(context: Context) {
             d("RuthlessRegiment_C20",   "Ruthless Regiment",   "C20", "Jirina Kudro",                    "WBR"),
             d("SymbioticSwarm_C20",     "Symbiotic Swarm",     "C20", "Kathril, Aspect Warper",          "WBG"),
             d("TimelessWisdom_C20",     "Timeless Wisdom",     "C20", "Gavi, Nest Warden",               "WUR"),
+            // ─── Commander Legends (CMR) ─────────────────────────────────────
+            d("ArmForBattle_CMR",       "Arm for Battle",      "CMR", "Wyleth, Soul of Steel",          "WR"),
+            d("ReapTheTides_CMR",       "Reap the Tides",      "CMR", "Aesi, Tyrant of Gyre Strait",    "UG"),
+            // ─── Kaldheim Commander (KHC) ────────────────────────────────────
+            d("ElvenEmpire_KHC",        "Elven Empire",        "KHC", "Lathril, Blade of the Elves",    "BG"),
+            d("PhantomPremonition_KHC", "Phantom Premonition", "KHC", "Ranar the Ever-Watchful",        "WU"),
             // ─── Commander 2021 / Strixhaven (C21) ───────────────────────────
             d("LoreholdLegacies_C21",   "Lorehold Legacies",   "C21", "Osgir, the Reconstructor",       "WR"),
             d("PrismariPerformance_C21","Prismari Performance", "C21", "Zaffai, Thunder Conductor",      "UR"),

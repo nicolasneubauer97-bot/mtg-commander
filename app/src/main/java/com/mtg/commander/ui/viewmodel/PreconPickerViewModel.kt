@@ -16,6 +16,7 @@ data class PreconPickerUiState(
     val isPreloadingImages: Boolean = false,
     val preloadProgress: String = "",
     val error: String? = null,
+    val networkWarning: Boolean = false,
     val searchQuery: String = ""
 ) {
     val filtered: List<PreconDeck> get() = if (searchQuery.isBlank()) decks else
@@ -36,10 +37,15 @@ class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
 
     private fun loadDecks(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, networkWarning = false)
             try {
-                var list = repo.getDeckList(forceRefresh)
-                _uiState.value = _uiState.value.copy(decks = list, isLoading = false)
+                val result = repo.getDeckList(forceRefresh)
+                var list = result.decks
+                _uiState.value = _uiState.value.copy(
+                    decks = list,
+                    isLoading = false,
+                    networkWarning = result.networkFailed
+                )
 
                 // Phase 1: Load MTGJSON deck details (commander names) for decks that need it
                 list.filter { it.commanderName.isBlank() }.forEach { deck ->
