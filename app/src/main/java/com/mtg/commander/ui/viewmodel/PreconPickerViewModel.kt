@@ -143,17 +143,34 @@ class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
                     }
                 }
 
-                // Phase 3: German names (skipped if already in asset bundle)
+                // Phase 3: German names for all decks that still need them
                 launch {
-                    list.filter { it.scryfallId.isNotBlank() && it.commanderNameDe.isBlank() }.forEach { deck ->
-                        val de = repo.fetchGermanName(deck.scryfallId)
-                        if (de.isNotBlank()) {
-                            val updated = _uiState.value.decks.map {
-                                if (it.fileName == deck.fileName) it.copy(commanderNameDe = de) else it
+                    list.filter { it.commanderName.isNotBlank() && it.commanderNameDe.isBlank() }
+                        .forEach { deck ->
+                            // Use scryfallId if available (faster), else fuzzy-search by name
+                            val de = if (deck.scryfallId.isNotBlank())
+                                repo.fetchGermanName(deck.scryfallId)
+                            else
+                                repo.fetchGermanNameByCommanderName(deck.commanderName)
+
+                            val de2 = if (deck.commanderName2.isNotBlank() && deck.commanderNameDe2.isBlank()) {
+                                if (deck.scryfallId.isNotBlank()) "" // scryfallId2 not stored separately here
+                                else repo.fetchGermanNameByCommanderName(deck.commanderName2)
+                            } else ""
+
+                            if (de.isNotBlank() || de2.isNotBlank()) {
+                                val updated = _uiState.value.decks.map {
+                                    if (it.fileName == deck.fileName)
+                                        it.copy(
+                                            commanderNameDe = de.ifBlank { it.commanderNameDe },
+                                            commanderNameDe2 = de2.ifBlank { it.commanderNameDe2 }
+                                        )
+                                    else it
+                                }
+                                _uiState.value = _uiState.value.copy(decks = updated)
                             }
-                            _uiState.value = _uiState.value.copy(decks = updated)
+                            kotlinx.coroutines.delay(150) // rate limiting for Scryfall
                         }
-                    }
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false,

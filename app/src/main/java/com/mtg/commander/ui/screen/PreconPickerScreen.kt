@@ -225,33 +225,44 @@ private fun PreconCard(deck: PreconDeck, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurface
             )
             if (deck.commanderName.isNotBlank()) {
-                val displayName = if (deck.commanderNameDe.isNotBlank()) deck.commanderNameDe else deck.commanderName
+                // English name always shown as primary
                 Text(
-                    displayName,
+                    deck.commanderName,
                     fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.secondary
                 )
-                if (deck.commanderNameDe.isNotBlank() && deck.commanderName != deck.commanderNameDe) {
+                // German name below, if different from English
+                val deName = (deck.commanderNameDe ?: "").trim()
+                if (deName.isNotBlank() && deName != deck.commanderName) {
                     Text(
-                        deck.commanderName,
+                        deName,
                         fontSize = 9.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
                     )
                 }
-                // Second commander (partner / background)
+                // Second commander (partner / background) — English + German
                 if (deck.commanderName2.isNotBlank()) {
-                    val displayName2 = if (deck.commanderNameDe2.isNotBlank()) deck.commanderNameDe2 else deck.commanderName2
                     Text(
-                        "& $displayName2",
+                        "& ${deck.commanderName2}",
                         fontSize = 9.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.75f)
                     )
+                    val deName2 = (deck.commanderNameDe2 ?: "").trim()
+                    if (deName2.isNotBlank() && deName2 != deck.commanderName2) {
+                        Text(
+                            "& $deName2",
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        )
+                    }
                 }
             } else {
                 Text("Lade…", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
