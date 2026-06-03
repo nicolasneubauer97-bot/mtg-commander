@@ -27,6 +27,9 @@ sealed class Screen(val route: String) {
     object PreconPicker : Screen("precon_picker/{playerId}") {
         fun createRoute(playerId: Long) = "precon_picker/$playerId"
     }
+    object SeatSetup : Screen("seat_setup/{playerCount}") {
+        fun createRoute(count: Int) = "seat_setup/$count"
+    }
     object GameIntro : Screen("game_intro/{gameId}") {
         fun createRoute(gameId: Long) = "game_intro/$gameId"
     }
@@ -68,6 +71,19 @@ fun AppNavigation(navController: NavHostController) {
         }
         composable(Screen.NewGame.route) {
             NewGameScreen(
+                onBack = { navController.popBackStack() },
+                onCountSelected = { count ->
+                    navController.navigate(Screen.SeatSetup.createRoute(count))
+                }
+            )
+        }
+        composable(
+            route = Screen.SeatSetup.route,
+            arguments = listOf(navArgument("playerCount") { type = NavType.IntType })
+        ) { backStack ->
+            val playerCount = backStack.arguments!!.getInt("playerCount")
+            SeatSetupScreen(
+                playerCount = playerCount,
                 app = app,
                 onBack = { navController.popBackStack() },
                 onGameStarted = { gameId ->
