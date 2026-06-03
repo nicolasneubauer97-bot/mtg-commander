@@ -17,10 +17,10 @@ data class GameDetailUiState(
     val participants: List<ParticipantUiState> = emptyList(),
     val kills: List<Kill> = emptyList(),
     val commanderDamage: List<CommanderDamage> = emptyList(),
-    // participantId → (gained, lost)
     val lifeSummary: Map<Long, Pair<Int, Int>> = emptyMap(),
-    // attackerParticipantId → (targetParticipantId → damage)
     val damageByAttacker: Map<Long, Map<Long, Int>> = emptyMap(),
+    // participantId → avg turn duration ms
+    val avgTurnDurationByParticipant: Map<Long, Long> = emptyMap(),
     val isLoading: Boolean = true
 )
 
@@ -56,6 +56,10 @@ class GameDetailViewModel(
 
                 val lifeSummary = try { statsRepository.getLifeSummaryForGame(gameId) } catch (_: Exception) { emptyMap() }
                 val damageByAttacker = try { statsRepository.getDamageByAttackerForGame(gameId) } catch (_: Exception) { emptyMap() }
+                val turnDurations = try { gameRepository.getTurnDurationsForGame(gameId) } catch (_: Exception) { emptyList() }
+                val avgTurnDuration = turnDurations
+                    .groupBy { it.participantId }
+                    .mapValues { (_, turns) -> if (turns.isEmpty()) 0L else turns.sumOf { it.durationMs } / turns.size }
 
                 _uiState.value = _uiState.value.copy(
                     game = game,
@@ -64,6 +68,7 @@ class GameDetailViewModel(
                     commanderDamage = damage,
                     lifeSummary = lifeSummary,
                     damageByAttacker = damageByAttacker,
+                    avgTurnDurationByParticipant = avgTurnDuration,
                     isLoading = false
                 )
             }

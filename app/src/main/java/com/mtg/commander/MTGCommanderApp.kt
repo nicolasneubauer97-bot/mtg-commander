@@ -20,7 +20,8 @@ class MTGCommanderApp : Application() {
             database.killDao(),
             database.lifeChangeEventDao(),
             database.randomOpponentPickDao(),
-            database.diceRollDao()
+            database.diceRollDao(),
+            database.turnDurationDao()
         )
     }
     val statsRepository by lazy {

@@ -9,6 +9,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.mtg.commander.data.dao.*
 import com.mtg.commander.data.entity.*
+import com.mtg.commander.data.entity.TurnDurationEntity
 
 @Database(
     entities = [
@@ -20,9 +21,10 @@ import com.mtg.commander.data.entity.*
         KillEntity::class,
         LifeChangeEventEntity::class,
         RandomOpponentPickEntity::class,
-        DiceRollEntity::class
+        DiceRollEntity::class,
+        TurnDurationEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -36,6 +38,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun lifeChangeEventDao(): LifeChangeEventDao
     abstract fun randomOpponentPickDao(): RandomOpponentPickDao
     abstract fun diceRollDao(): DiceRollDao
+    abstract fun turnDurationDao(): TurnDurationDao
 
     companion object {
         @Volatile
@@ -128,6 +131,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE `kills` ADD COLUMN `isSurrender` INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `turn_durations` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `gameId` INTEGER NOT NULL,
+                        `participantId` INTEGER NOT NULL,
+                        `turnNumber` INTEGER NOT NULL,
+                        `roundNumber` INTEGER NOT NULL,
+                        `durationMs` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`gameId`) REFERENCES `games`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_turn_durations_gameId` ON `turn_durations` (`gameId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_turn_durations_participantId` ON `turn_durations` (`participantId`)")
+            }
+        }
+
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("""
@@ -152,7 +175,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "mtg_commander.db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build().also { INSTANCE = it }
             }
     }

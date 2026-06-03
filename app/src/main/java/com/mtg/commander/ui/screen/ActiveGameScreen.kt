@@ -115,7 +115,7 @@ fun ActiveGameScreen(
                 others = state.participants.filter {
                     it.participant.id != victim.participant.id && !it.participant.isEliminated
                 },
-                onConfirm = { vm.eliminatePlayer(victim.participant.id, it) },
+                onConfirm = { killerId, isSurrender -> vm.eliminatePlayer(victim.participant.id, killerId, isSurrender) },
                 onDismiss = vm::dismissEliminateDialog
             )
         }
@@ -126,6 +126,18 @@ fun ActiveGameScreen(
             text = { Text("Das Spiel wird als abgeschlossen markiert.") },
             confirmButton = { TextButton(onClick = vm::endGame) { Text("Beenden") } },
             dismissButton = { TextButton(onClick = vm::dismissEndGameConfirm) { Text("Abbrechen") } }
+        )
+    }
+    if (state.showAbandonConfirm) {
+        AlertDialog(onDismissRequest = vm::dismissAbandonConfirm,
+            title = { Text("Spiel abbrechen?") },
+            text = { Text("Das Spiel wird abgebrochen. Es werden keine Statistiken gespeichert.") },
+            confirmButton = {
+                TextButton(onClick = vm::abandonGame) {
+                    Text("Abbrechen", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = vm::dismissAbandonConfirm) { Text("Weiter spielen") } }
         )
     }
     if (state.showCounterLabelDialogFor != null) {
@@ -738,6 +750,13 @@ private fun VictoryOverlay(winnerName: String, onShowDetail: () -> Unit, onDismi
 // ─── Turn Bar (immer sichtbar) ───────────────────────────────────────────────
 
 @Composable
+@Composable
+private fun formatElapsed(ms: Long): String {
+    val s = (ms / 1000).coerceAtLeast(0)
+    return "%d:%02d".format(s / 60, s % 60)
+}
+
+@Composable
 private fun TurnBar(
     state: ActiveGameUiState,
     isFinished: Boolean,
@@ -748,6 +767,15 @@ private fun TurnBar(
     val currentName = state.currentTurnPlayer?.player?.name
     val bg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (compact) 0.92f else 1f)
     val shape = RoundedCornerShape(if (compact) 20.dp else 0.dp)
+
+    // Running turn timer
+    val elapsed by produceState(0L, state.currentTurnStartMs) {
+        if (state.currentTurnStartMs == 0L) { value = 0L; return@produceState }
+        while (true) {
+            value = System.currentTimeMillis() - state.currentTurnStartMs
+            kotlinx.coroutines.delay(1000L)
+        }
+    }
 
     Surface(color = bg, shape = shape,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))) {
@@ -779,6 +807,14 @@ private fun TurnBar(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+            }
+            // Turn timer
+            if (state.currentTurnStartMs > 0L) {
+                Text(
+                    text = "⏱ ${formatElapsed(elapsed)}",
+                    fontSize = if (compact) 9.sp else 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.weight(1f))
@@ -838,6 +874,12 @@ private fun CenterActions(
                         tint = MaterialTheme.colorScheme.secondary)
                 }
             }
+            if (!isFinished) {
+                IconButton(onClick = vm::showAbandonConfirm, Modifier.size(28.dp)) {
+                    Icon(Icons.Filled.Close, "Abbrechen", Modifier.fillMaxSize(),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             IconButton(onClick = onBack, Modifier.size(28.dp)) {
                 Icon(Icons.Filled.ArrowBack, "Zurück", Modifier.fillMaxSize())
             }
@@ -863,6 +905,7 @@ private fun ScrollLayout(
                 },
                 actions = {
                     if (!isFinished) {
+                        TextButton(onClick = vm::showAbandonConfirm) { Text("Abbrechen") }
                         TextButton(onClick = vm::showEndGameConfirm, enabled = hasWinner) {
                             Text("Beenden")
                         }
@@ -1075,7 +1118,7 @@ private fun InlineCounter(
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (onMinus != null) {
-            TextButton(onClick = onMinus, modifier = Modifier.size(22.dp),
+            TextButton(onClick = onMinus, modifier = Modifier.size(36.dp),
                 contentPadding = PaddingValues(0.dp)) {
                 Text("-", fontSize = labelSize, fontWeight = FontWeight.Bold)
             }
@@ -1087,7 +1130,7 @@ private fun InlineCounter(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (onPlus != null) {
-            TextButton(onClick = onPlus, modifier = Modifier.size(22.dp),
+            TextButton(onClick = onPlus, modifier = Modifier.size(36.dp),
                 contentPadding = PaddingValues(0.dp)) {
                 Text("+", fontSize = labelSize, fontWeight = FontWeight.Bold)
             }
@@ -1103,8 +1146,8 @@ private fun MiniBtn(
 ) {
     TextButton(
         onClick = onClick,
-        modifier = modifier.height(h).widthIn(min = h),
-        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+        modifier = modifier.height(h).widthIn(min = h * 1.2f),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
     ) {
         Text(text, fontSize = fs, fontWeight = FontWeight.Bold)
     }
@@ -1112,42 +1155,58 @@ private fun MiniBtn(
 
 @Composable
 private fun LifeBtn(text: String, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = Modifier.size(44.dp),
+    TextButton(onClick = onClick, modifier = Modifier.size(56.dp),
         contentPadding = PaddingValues(0.dp)) {
-        Text(text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text(text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
     }
 }
+
+private const val SURRENDER_SENTINEL = -99L
 
 @Composable
 private fun EliminateDialog(
     victimName: String, others: List<ParticipantUiState>,
-    onConfirm: (Long?) -> Unit, onDismiss: () -> Unit
+    onConfirm: (killerId: Long?, isSurrender: Boolean) -> Unit, onDismiss: () -> Unit
 ) {
-    var killerId by remember { mutableStateOf<Long?>(null) }
+    var selection by remember { mutableStateOf<Long?>(null) } // null=unknown, SURRENDER_SENTINEL=surrender, id=killer
     AlertDialog(onDismissRequest = onDismiss,
         title = { Text("$victimName eliminieren") },
         text = {
             Column {
-                Text("Wer hat $victimName eliminiert?")
+                Text("Wie wurde $victimName eliminiert?")
                 Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = killerId == null, onClick = { killerId = null })
+                // Aufgabe
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()) {
+                    RadioButton(selected = selection == SURRENDER_SENTINEL,
+                        onClick = { selection = SURRENDER_SENTINEL })
+                    Text("🏳 Aufgabe (selbst aufgegeben)")
+                }
+                // Unknown/Self
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()) {
+                    RadioButton(selected = selection == null,
+                        onClick = { selection = null })
                     Text("Unbekannt / Selbst")
                 }
                 others.forEach { ps ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = killerId == ps.participant.id,
-                            onClick = { killerId = ps.participant.id })
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()) {
+                        RadioButton(selected = selection == ps.participant.id,
+                            onClick = { selection = ps.participant.id })
                         Text(ps.player.name)
                     }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(killerId) },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
-                Text("Eliminieren")
-            }
+            Button(
+                onClick = {
+                    if (selection == SURRENDER_SENTINEL) onConfirm(null, true)
+                    else onConfirm(selection, false)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) { Text("Eliminieren") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } }
     )

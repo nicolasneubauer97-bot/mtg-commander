@@ -103,7 +103,16 @@ private fun GameHistoryCard(game: Game, onClick: () -> Unit, onDeleteRequest: ()
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(fmt.format(Date(game.startedAt)), style = MaterialTheme.typography.bodyLarge)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(fmt.format(Date(game.startedAt)), style = MaterialTheme.typography.bodyLarge)
+                    if (game.status == "ABANDONED") {
+                        Surface(color = MaterialTheme.colorScheme.errorContainer, shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)) {
+                            Text("Abgebrochen", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = androidx.compose.ui.Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                        }
+                    }
+                }
                 game.endedAt?.let { Text("Beendet: ${fmt.format(Date(it))}", style = MaterialTheme.typography.bodySmall) }
                 Text("Spiel #${game.id}", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)

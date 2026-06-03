@@ -23,5 +23,6 @@ data class KillEntity(
     val gameId: Long,
     val killerParticipantId: Long?,
     val victimParticipantId: Long,
+    val isSurrender: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 )

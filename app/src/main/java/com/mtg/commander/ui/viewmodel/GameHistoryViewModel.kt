@@ -23,8 +23,11 @@ class GameHistoryViewModel(private val gameRepository: GameRepository) : ViewMod
 
     init {
         viewModelScope.launch {
-            gameRepository.getFinishedGames().collect { games ->
-                _uiState.value = _uiState.value.copy(games = games, isLoading = false)
+            gameRepository.getFinishedAndAbandonedGames().collect { games ->
+                _uiState.value = _uiState.value.copy(
+                    games = games.sortedByDescending { it.startedAt },
+                    isLoading = false
+                )
             }
         }
     }

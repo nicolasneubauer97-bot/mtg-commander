@@ -39,7 +39,9 @@ data class ActiveGameUiState(
     val currentTurnParticipantId: Long? = null,
     val currentTurnNumber: Int = 0,
     val currentRound: Int = 1,
+    val currentTurnStartMs: Long = 0L,
     val canUndo: Boolean = false,
+    val showAbandonConfirm: Boolean = false,
     // Auto-eliminate: participants already auto-triggered (don't retrigger)
     val autoEliminateTriggered: Set<Long> = emptySet(),
     // Undo elimination
@@ -70,10 +72,7 @@ data class ActiveGameUiState(
         participants.find { it.participant.id == currentTurnParticipantId }
 }
 
-private data class TurnHistoryEntry(
-    val playerId: Long,
-    val committedDeltas: Map<Long, Int>  // participantId → delta that was written to life_change_events
-)
+private data class TurnHistoryEntry(val playerId: Long)
 
 class ActiveGameViewModel(
     private val gameId: Long,
@@ -90,6 +89,7 @@ class ActiveGameViewModel(
     private val pendingLifeDeltas = mutableMapOf<Long, Int>()
     private val turnHistory = ArrayDeque<TurnHistoryEntry>()
     private var currentRound = 1
+    private var turnStartTimeMs = System.currentTimeMillis()
 
     // Elimination undo: (victimParticipantId, lifeAtElimination, killId)
     private data class EliminationRecord(val victimId: Long, val lifeAtElim: Int, val killId: Long?, val roundAtElim: Int)
@@ -305,6 +305,19 @@ class ActiveGameViewModel(
         // Detect round wrap-around: next position is before or equal to current → new round
         if (currentPos >= 0 && nextPos <= currentPos) currentRound++
 
+        // Log turn duration for the player who just finished their turn
+        val durationMs = System.currentTimeMillis() - turnStartTimeMs
+        if (currentId != null && durationMs > 0) {
+            viewModelScope.launch {
+                gameRepository.logTurnDuration(
+                    gameId = gameId, participantId = currentId,
+                    turnNumber = state.currentTurnNumber, roundNumber = currentRound,
+                    durationMs = durationMs
+                )
+            }
+        }
+        turnStartTimeMs = System.currentTimeMillis()
+
         // Commit buffered life changes as LifeChangeEvents
         val committed = pendingLifeDeltas.toMap()
         if (committed.isNotEmpty()) {
@@ -322,7 +335,7 @@ class ActiveGameViewModel(
         }
         // Push to undo history
         if (currentId != null) {
-            turnHistory.addLast(TurnHistoryEntry(currentId, committed))
+            turnHistory.addLast(TurnHistoryEntry(currentId))
         }
         pendingLifeDeltas.clear()
 
@@ -330,6 +343,7 @@ class ActiveGameViewModel(
             currentTurnParticipantId = nextId,
             currentTurnNumber = newTurnNumber,
             currentRound = currentRound,
+            currentTurnStartMs = turnStartTimeMs,
             canUndo = turnHistory.isNotEmpty()
         )
         viewModelScope.launch {
@@ -339,38 +353,13 @@ class ActiveGameViewModel(
     }
 
     fun previousPlayer() {
-        val state = _uiState.value
-
-        // First: undo any pending changes from the CURRENT turn
-        if (pendingLifeDeltas.isNotEmpty()) {
-            val toReverse = pendingLifeDeltas.toMap()
-            pendingLifeDeltas.clear()
-            viewModelScope.launch {
-                toReverse.forEach { (pid, delta) ->
-                    if (delta != 0) {
-                        val p = _uiState.value.participants.find { it.participant.id == pid }
-                            ?.participant ?: return@forEach
-                        gameRepository.updateParticipant(p.copy(currentLife = p.currentLife - delta))
-                    }
-                }
-            }
-        }
-
         if (turnHistory.isEmpty()) return
+        val state = _uiState.value
         val entry = turnHistory.removeLast()
-
-        // Reverse committed changes from the previous turn
+        // Life points are NOT reversed — user adjusts manually
         viewModelScope.launch {
-            entry.committedDeltas.forEach { (pid, delta) ->
-                if (delta != 0) {
-                    val p = _uiState.value.participants.find { it.participant.id == pid }
-                        ?.participant ?: return@forEach
-                    gameRepository.updateParticipant(p.copy(currentLife = p.currentLife - delta))
-                }
-            }
             gameRepository.setCurrentTurnParticipant(gameId, entry.playerId)
         }
-
         _uiState.value = state.copy(
             currentTurnParticipantId = entry.playerId,
             currentTurnNumber = (state.currentTurnNumber - 1).coerceAtLeast(0),
@@ -392,9 +381,11 @@ class ActiveGameViewModel(
 
     fun dismissStartDialog() {
         val startingId = _uiState.value.startingPlayerId
+        turnStartTimeMs = System.currentTimeMillis()
         _uiState.value = _uiState.value.copy(
             showStartDialog = false,
-            currentTurnParticipantId = startingId ?: _uiState.value.currentTurnParticipantId
+            currentTurnParticipantId = startingId ?: _uiState.value.currentTurnParticipantId,
+            currentTurnStartMs = turnStartTimeMs
         )
         if (startingId != null) {
             viewModelScope.launch {
@@ -441,7 +432,7 @@ class ActiveGameViewModel(
         _uiState.value = _uiState.value.copy(showEliminateDialogFor = null)
     }
 
-    fun eliminatePlayer(victimId: Long, killerId: Long?) {
+    fun eliminatePlayer(victimId: Long, killerId: Long?, isSurrender: Boolean = false) {
         viewModelScope.launch {
             // Commit pending life deltas FIRST so damage leading to elimination counts for stats
             val committed = pendingLifeDeltas.toMap()
@@ -470,7 +461,8 @@ class ActiveGameViewModel(
                     eliminatedAt = System.currentTimeMillis(), eliminatedAtRound = roundAtElim)
             )
             val killId = gameRepository.insertKill(Kill(gameId = gameId,
-                killerParticipantId = killerId, victimParticipantId = victimId))
+                killerParticipantId = killerId, victimParticipantId = victimId,
+                isSurrender = isSurrender))
             val remaining = active.filter { it.id != victimId }
             val winner = if (remaining.size == 1) remaining.first() else null
             if (winner != null) {
@@ -601,6 +593,21 @@ class ActiveGameViewModel(
 
     fun dismissEndGameConfirm() {
         _uiState.value = _uiState.value.copy(showEndGameConfirm = false)
+    }
+
+    fun showAbandonConfirm() {
+        _uiState.value = _uiState.value.copy(showAbandonConfirm = true)
+    }
+
+    fun dismissAbandonConfirm() {
+        _uiState.value = _uiState.value.copy(showAbandonConfirm = false)
+    }
+
+    fun abandonGame() {
+        viewModelScope.launch {
+            gameRepository.abandonGame(gameId)
+            _uiState.value = _uiState.value.copy(showAbandonConfirm = false)
+        }
     }
 
     fun endGame() {

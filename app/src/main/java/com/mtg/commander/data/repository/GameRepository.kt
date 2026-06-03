@@ -14,13 +14,20 @@ class GameRepository(
     private val killDao: KillDao,
     private val lifeChangeEventDao: LifeChangeEventDao,
     private val randomOpponentPickDao: RandomOpponentPickDao,
-    private val diceRollDao: DiceRollDao
+    private val diceRollDao: DiceRollDao,
+    private val turnDurationDao: com.mtg.commander.data.dao.TurnDurationDao
 ) {
     fun getAllGames(): Flow<List<Game>> =
         gameDao.getAllGames().map { it.map(GameEntity::toDomain) }
 
     fun getFinishedGames(): Flow<List<Game>> =
         gameDao.getGamesByStatus(GameStatus.FINISHED).map { it.map(GameEntity::toDomain) }
+
+    fun getFinishedAndAbandonedGames(): Flow<List<Game>> =
+        gameDao.getAllGames().map { games ->
+            games.filter { it.status == GameStatus.FINISHED || it.status == GameStatus.ABANDONED }
+                .map(GameEntity::toDomain)
+        }
 
     fun getActiveGames(): Flow<List<Game>> =
         gameDao.getGamesByStatus(GameStatus.IN_PROGRESS).map { it.map(GameEntity::toDomain) }
@@ -169,6 +176,40 @@ class GameRepository(
         return Pair(wins, total)
     }
 
+    suspend fun abandonGame(gameId: Long) {
+        val game = gameDao.getGameById(gameId) ?: return
+        gameDao.updateGame(game.copy(status = GameStatus.ABANDONED, endedAt = System.currentTimeMillis()))
+    }
+
+    // ─── Turn Durations ───────────────────────────────────────────────────────
+
+    suspend fun logTurnDuration(
+        gameId: Long, participantId: Long,
+        turnNumber: Int, roundNumber: Int, durationMs: Long
+    ) {
+        turnDurationDao.insert(
+            com.mtg.commander.data.entity.TurnDurationEntity(
+                gameId = gameId, participantId = participantId,
+                turnNumber = turnNumber, roundNumber = roundNumber,
+                durationMs = durationMs
+            )
+        )
+    }
+
+    suspend fun getTurnDurationsForGame(gameId: Long): List<com.mtg.commander.domain.model.TurnDuration> =
+        turnDurationDao.getForGame(gameId).map {
+            com.mtg.commander.domain.model.TurnDuration(
+                id = it.id, gameId = it.gameId, participantId = it.participantId,
+                turnNumber = it.turnNumber, roundNumber = it.roundNumber, durationMs = it.durationMs
+            )
+        }
+
+    suspend fun getGlobalAverageTurnDurationMs(): Long =
+        turnDurationDao.globalAverageDurationMs()?.toLong() ?: 0L
+
+    suspend fun getAverageTurnDurationMsForPlayer(playerId: Long): Long =
+        turnDurationDao.averageDurationMsForPlayer(playerId)?.toLong() ?: 0L
+
     suspend fun deleteAllLifeChangeEvents() = lifeChangeEventDao.deleteAll()
 
     suspend fun deleteAllRandomOpponentPicks() = randomOpponentPickDao.deleteAll()
@@ -213,11 +254,13 @@ private fun CommanderDamageEntity.toDomain() = CommanderDamage(
 private fun Kill.toEntity() = KillEntity(
     id = id, gameId = gameId,
     killerParticipantId = killerParticipantId,
-    victimParticipantId = victimParticipantId, createdAt = createdAt
+    victimParticipantId = victimParticipantId,
+    isSurrender = isSurrender, createdAt = createdAt
 )
 
 private fun KillEntity.toDomain() = Kill(
     id = id, gameId = gameId,
     killerParticipantId = killerParticipantId,
-    victimParticipantId = victimParticipantId, createdAt = createdAt
+    victimParticipantId = victimParticipantId,
+    isSurrender = isSurrender, createdAt = createdAt
 )

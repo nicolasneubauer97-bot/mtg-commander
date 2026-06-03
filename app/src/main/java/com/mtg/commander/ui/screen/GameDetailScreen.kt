@@ -76,7 +76,8 @@ fun GameDetailScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
                     PlacementCard(
                         pState = pState,
                         commanderDamageByAttacker = buildCommanderDamageMap(pState, state.participants),
-                        lifeSummary = state.lifeSummary[pState.participant.id]
+                        lifeSummary = state.lifeSummary[pState.participant.id],
+                        avgTurnDuration = state.avgTurnDurationByParticipant[pState.participant.id]
                     )
                 }
 
@@ -98,8 +99,11 @@ fun GameDetailScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
                                 Column {
                                     Text(victim?.player?.name ?: "?", fontWeight = FontWeight.Bold)
                                     Text(
-                                        if (killer != null) "Eliminiert von ${killer.player.name}"
-                                        else "Selbstverschuldet / Unbekannt",
+                                        when {
+                                            kill.isSurrender -> "🏳 Aufgabe"
+                                            killer != null -> "Eliminiert von ${killer.player.name}"
+                                            else -> "Selbstverschuldet / Unbekannt"
+                                        },
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                 }
@@ -136,7 +140,8 @@ fun GameDetailScreen(gameId: Long, app: MTGCommanderApp, onBack: () -> Unit) {
 private fun PlacementCard(
     pState: ParticipantUiState,
     commanderDamageByAttacker: Map<String, Int>,
-    lifeSummary: Pair<Int, Int>?  // (gained, lost)
+    lifeSummary: Pair<Int, Int>?,  // (gained, lost)
+    avgTurnDuration: Long? = null  // avg ms per turn
 ) {
     val p = pState.participant
     val isWinner = p.placement == 1
@@ -163,6 +168,12 @@ private fun PlacementCard(
                     Text("Eliminiert in Runde ${p.eliminatedAtRound}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
+                }
+                avgTurnDuration?.let { ms ->
+                    val s = ms / 1000
+                    Text("⏱ Ø Zugzeit: %d:%02d".format(s / 60, s % 60),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (lifeSummary != null) {
                     val (gained, lost) = lifeSummary
