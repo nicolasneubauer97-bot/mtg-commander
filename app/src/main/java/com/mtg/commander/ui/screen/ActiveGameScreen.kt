@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.ui.theme.EliminatedColor
+import com.mtg.commander.ui.theme.MTGGold
 import com.mtg.commander.ui.theme.WinnerColor
 import com.mtg.commander.ui.viewmodel.ActiveGameUiState
 import com.mtg.commander.ui.viewmodel.ActiveGameViewModel
@@ -128,6 +130,58 @@ fun ActiveGameScreen(
             dismissButton = { TextButton(onClick = vm::dismissEndGameConfirm) { Text("Abbrechen") } }
         )
     }
+    // CMD-Overlay für 2-Spieler-Layout (ScrollLayout) — als Vollbild-Dialog
+    if (state.showCommanderDamageFor != null && state.participants.size <= 2) {
+        val target2 = state.participants.find { it.participant.id == state.showCommanderDamageFor }
+        if (target2 != null) {
+            Dialog(onDismissRequest = { vm.showCommanderDamagePanel(null) }) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.Black.copy(alpha = 0.95f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text("CMD-Schaden", color = MTGGold, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            IconButton(onClick = { vm.showCommanderDamagePanel(null) }) {
+                                Icon(Icons.Filled.Close, "Schliessen", tint = Color.White)
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        state.participants.filter { it.participant.id != target2.participant.id }.forEach { att ->
+                            val dmg = target2.commanderDamageReceived[att.participant.id] ?: 0
+                            val warn = dmg >= 21
+                            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(att.player.name, color = if (warn) MaterialTheme.colorScheme.error else Color.White,
+                                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (!isFinished) {
+                                    Button(onClick = { vm.updateCommanderDamage(att.participant.id, target2.participant.id, -1) },
+                                        modifier = Modifier.size(48.dp), contentPadding = PaddingValues(0.dp)) {
+                                        Text("-", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                Text("$dmg${if (warn) "⚠" else ""}", fontSize = 24.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = if (warn) MaterialTheme.colorScheme.error else Color.White,
+                                    modifier = Modifier.widthIn(min = 44.dp),
+                                    textAlign = TextAlign.Center)
+                                if (!isFinished) {
+                                    Button(onClick = { vm.updateCommanderDamage(att.participant.id, target2.participant.id, +1) },
+                                        modifier = Modifier.size(48.dp), contentPadding = PaddingValues(0.dp)) {
+                                        Text("+", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (state.showAbandonConfirm) {
         AlertDialog(onDismissRequest = vm::dismissAbandonConfirm,
             title = { Text("Spiel abbrechen?") },
@@ -440,6 +494,17 @@ private fun PlayerCell(
                 MiniPlayerPanel(vm, state, pState, isFinished, maxWidth, maxHeight)
             }
         }
+        // Full-cell CMD overlay — shown rotated so it's readable from the player's side
+        if (state.showCommanderDamageFor == pState.participant.id) {
+            CommanderDamageOverlay(
+                targetPState = pState,
+                allParticipants = state.participants,
+                isFinished = isFinished,
+                rotation = rotation,
+                onUpdateDamage = { aId, tId, d -> vm.updateCommanderDamage(aId, tId, d) },
+                onClose = { vm.showCommanderDamagePanel(null) }
+            )
+        }
     }
 }
 
@@ -597,12 +662,17 @@ private fun MiniPlayerPanel(
                         }
                     }
                 }
-                val totalCmd = pState.commanderDamageReceived.values.sum()
-                if (totalCmd > 0) {
-                    Text("CMD:$totalCmd${if (totalCmd >= 21) "⚠" else ""}",
+                val maxCmd = pState.commanderDamageReceived.values.maxOrNull() ?: 0
+                if (maxCmd > 0) {
+                    Text(
+                        "CMD:$maxCmd${if (maxCmd >= 21) "⚠" else ""}",
                         fontSize = tinyFs, fontWeight = FontWeight.Bold,
-                        color = if (totalCmd >= 21) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.onSurfaceVariant)
+                        color = if (maxCmd >= 21) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.clickable(enabled = hasButtons) {
+                            vm.showCommanderDamagePanel(if (state.showCommanderDamageFor == p.id) null else p.id)
+                        }
+                    )
                 }
             }
 
@@ -669,27 +739,81 @@ private fun MiniPlayerPanel(
                 }
             }
 
-            // ─── CMD-Schaden-Detail ──────────────────────────────────────────────
-            if (state.showCommanderDamageFor == p.id) {
-                HorizontalDivider(Modifier.padding(vertical = 2.dp))
-                state.participants.filter { it.participant.id != p.id }.forEach { att ->
-                    val dmg = pState.commanderDamageReceived[att.participant.id] ?: 0
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()) {
-                        Text(att.player.name, fontSize = tinyFs, modifier = Modifier.weight(1f),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            color = if (dmg >= 21) MaterialTheme.colorScheme.error
-                                    else MaterialTheme.colorScheme.onSurface)
-                        Text("$dmg${if (dmg >= 21) "⚠" else ""}",
-                            fontSize = tinyFs, fontWeight = FontWeight.Bold,
-                            color = if (dmg >= 21) MaterialTheme.colorScheme.error
-                                    else MaterialTheme.colorScheme.onSurface)
-                        if (hasButtons) {
-                            MiniBtn("-", btnH * 0.75f, tinyFs) {
-                                vm.updateCommanderDamage(att.participant.id, p.id, -1) }
-                            MiniBtn("+", btnH * 0.75f, tinyFs) {
-                                vm.updateCommanderDamage(att.participant.id, p.id, +1) }
-                        }
+        }
+    }
+}
+
+// ─── Commander-Damage-Overlay (Vollbild über dem Spieler-Cell) ───────────────
+
+@Composable
+private fun CommanderDamageOverlay(
+    targetPState: ParticipantUiState,
+    allParticipants: List<ParticipantUiState>,
+    isFinished: Boolean,
+    rotation: Float,
+    onUpdateDamage: (attackerId: Long, targetId: Long, delta: Int) -> Unit,
+    onClose: () -> Unit
+) {
+    val others = allParticipants.filter { it.participant.id != targetPState.participant.id }
+    val target = targetPState.participant
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.92f))
+            .rotate(rotation)
+    ) {
+        // X-Button oben rechts
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)
+        ) {
+            Icon(Icons.Filled.Close, "Schliessen", tint = Color.White,
+                modifier = Modifier.size(22.dp))
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 36.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
+        ) {
+            Text("CMD-Schaden", fontSize = 11.sp, color = MTGGold,
+                fontWeight = FontWeight.Bold)
+
+            others.forEach { att ->
+                val dmg = targetPState.commanderDamageReceived[att.participant.id] ?: 0
+                val warn = dmg >= 21
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        att.player.name, fontSize = 11.sp,
+                        color = if (warn) MaterialTheme.colorScheme.error else Color.White,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    if (!isFinished) {
+                        FilledTonalButton(
+                            onClick = { onUpdateDamage(att.participant.id, target.id, -1) },
+                            modifier = Modifier.size(38.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) { Text("-", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                    }
+                    Text(
+                        "$dmg${if (warn) "⚠" else ""}",
+                        fontSize = 18.sp, fontWeight = FontWeight.ExtraBold,
+                        color = if (warn) MaterialTheme.colorScheme.error else Color.White,
+                        modifier = Modifier.widthIn(min = 34.dp),
+                        textAlign = TextAlign.Center
+                    )
+                    if (!isFinished) {
+                        FilledTonalButton(
+                            onClick = { onUpdateDamage(att.participant.id, target.id, +1) },
+                            modifier = Modifier.size(38.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) { Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
                     }
                 }
             }
@@ -1026,10 +1150,16 @@ private fun FullPlayerCard(
                             }
                         }
                     }
-                    val totalCmd = pState.commanderDamageReceived.values.sum()
-                    if (totalCmd > 0) Text("CMD: $totalCmd${if (totalCmd >= 21) " ⚠" else ""}",
-                        fontSize = 12.sp, color = if (totalCmd >= 21) MaterialTheme.colorScheme.error
-                                                 else MaterialTheme.colorScheme.onSurfaceVariant)
+                    val maxCmd2 = pState.commanderDamageReceived.values.maxOrNull() ?: 0
+                    if (maxCmd2 > 0) Text(
+                        "CMD: $maxCmd2${if (maxCmd2 >= 21) " ⚠" else ""}",
+                        fontSize = 12.sp,
+                        color = if (maxCmd2 >= 21) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.clickable(enabled = !p.isEliminated && !isFinished) {
+                            vm.showCommanderDamagePanel(if (state.showCommanderDamageFor == p.id) null else p.id)
+                        }
+                    )
                 }
                 if (!p.isEliminated && !isFinished) {
                     Spacer(Modifier.height(8.dp))
@@ -1079,28 +1209,7 @@ private fun FullPlayerCard(
                         }
                     }
                 }
-                if (state.showCommanderDamageFor == p.id) {
-                    HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                    Text("Commander-Schaden von:", style = MaterialTheme.typography.labelSmall)
-                    Spacer(Modifier.height(4.dp))
-                    state.participants.filter { it.participant.id != p.id }.forEach { att ->
-                        val dmg = pState.commanderDamageReceived[att.participant.id] ?: 0
-                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text(att.player.name, Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (dmg >= 21) MaterialTheme.colorScheme.error
-                                        else MaterialTheme.colorScheme.onSurface)
-                            Text("$dmg${if (dmg >= 21) " ⚠" else ""}", fontWeight = FontWeight.Bold,
-                                color = if (dmg >= 21) MaterialTheme.colorScheme.error
-                                        else MaterialTheme.colorScheme.onSurface)
-                            if (!p.isEliminated && !isFinished) {
-                                LifeBtn("-") { vm.updateCommanderDamage(att.participant.id, p.id, -1) }
-                                LifeBtn("+") { vm.updateCommanderDamage(att.participant.id, p.id, +1) }
-                            }
-                        }
-                    }
-                }
+                // CMD-Detail wird als Vollbild-Overlay in ActiveGameScreen gezeigt
             }
         }
     }
