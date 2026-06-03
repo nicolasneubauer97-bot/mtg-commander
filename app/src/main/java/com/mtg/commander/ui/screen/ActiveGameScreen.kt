@@ -749,8 +749,6 @@ private fun VictoryOverlay(winnerName: String, onShowDetail: () -> Unit, onDismi
 
 // ─── Turn Bar (immer sichtbar) ───────────────────────────────────────────────
 
-@Composable
-@Composable
 private fun formatElapsed(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
     return "%d:%02d".format(s / 60, s % 60)
