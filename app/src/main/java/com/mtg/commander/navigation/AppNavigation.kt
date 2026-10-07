@@ -161,6 +161,8 @@ fun AppNavigation(navController: NavHostController) {
             val playerId = backStack.arguments!!.getLong("playerId")
             PreconPickerScreen(
                 repo = app.preconRepository,
+                deckRepository = app.deckRepository,
+                playerId = playerId,
                 onPicked = { precon ->
                     navController.previousBackStackEntry
                         ?.savedStateHandle

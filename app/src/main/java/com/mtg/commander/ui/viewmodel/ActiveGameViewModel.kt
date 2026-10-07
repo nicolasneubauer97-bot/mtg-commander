@@ -406,11 +406,11 @@ class ActiveGameViewModel(
             if (p.isEliminated) continue
             if (p.id in state.autoEliminateTriggered) continue
 
-            val totalCmd = pState.commanderDamageReceived.values.sum()
+            val maxCmd = pState.commanderDamageReceived.values.maxOrNull() ?: 0
             val triggers = buildList {
                 if (p.currentLife <= 0) add("0 oder weniger Leben (${p.currentLife})")
                 if (pState.poisonCounters >= 10) add("10 Giftmarken")
-                if (totalCmd >= 21) add("21 Commander-Schaden")
+                if (maxCmd >= 21) add("21 Commander-Schaden von einem Gegner")
             }
             if (triggers.isNotEmpty()) {
                 _uiState.value = _uiState.value.copy(

@@ -91,6 +91,9 @@ class DecksViewModel(
     fun importPrecon(name: String, commanderName: String, colors: String, imageUrl: String) {
         viewModelScope.launch {
             val player = _uiState.value.selectedPlayer ?: return@launch
+            val existing = deckRepository.getDecksByPlayerSync(player.id)
+            val alreadyOwned = existing.any { it.name.trim().equals(name.trim(), ignoreCase = true) }
+            if (alreadyOwned) return@launch
             deckRepository.insertDeck(
                 Deck(playerId = player.id, name = name, commanderName = commanderName,
                     colors = colors, imageUrl = imageUrl)

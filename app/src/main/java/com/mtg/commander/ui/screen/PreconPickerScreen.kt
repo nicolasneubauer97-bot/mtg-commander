@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -27,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.PreconRepository
 import com.mtg.commander.domain.model.PreconDeck
 import com.mtg.commander.ui.theme.*
@@ -37,10 +39,14 @@ import com.mtg.commander.ui.viewmodel.PreconPickerViewModel
 @Composable
 fun PreconPickerScreen(
     repo: PreconRepository,
+    deckRepository: DeckRepository,
+    playerId: Long,
     onPicked: (PreconDeck) -> Unit,
     onBack: () -> Unit
 ) {
-    val vm: PreconPickerViewModel = viewModel(factory = PreconPickerViewModel.factory(repo))
+    val vm: PreconPickerViewModel = viewModel(
+        factory = PreconPickerViewModel.factory(repo, deckRepository, playerId)
+    )
     val state by vm.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -153,7 +159,12 @@ fun PreconPickerScreen(
                             modifier = Modifier.fillMaxSize()
                         ) {
                             items(list, key = { it.fileName }) { deck ->
-                                PreconCard(deck = deck, onClick = { onPicked(deck) })
+                                val alreadyOwned = state.isAlreadyOwned(deck)
+                                PreconCard(
+                                    deck = deck,
+                                    alreadyOwned = alreadyOwned,
+                                    onClick = { if (!alreadyOwned) onPicked(deck) }
+                                )
                             }
                         }
                     }
@@ -164,12 +175,15 @@ fun PreconPickerScreen(
 }
 
 @Composable
-private fun PreconCard(deck: PreconDeck, onClick: () -> Unit) {
+private fun PreconCard(deck: PreconDeck, alreadyOwned: Boolean = false, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth()
+            .clickable(enabled = !alreadyOwned, onClick = onClick),
         shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, MTGGold.copy(alpha = 0.3f)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        border = BorderStroke(1.dp, MTGGold.copy(alpha = if (alreadyOwned) 0.1f else 0.3f)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (alreadyOwned) 0.5f else 1f)
+        )
     ) {
         Box(Modifier.fillMaxWidth().height(130.dp)) {
             val artUrl = deck.displayArtUrl
@@ -183,7 +197,9 @@ private fun PreconCard(deck: PreconDeck, onClick: () -> Unit) {
                         .crossfade(true)
                         .build(),
                     contentDescription = deck.commanderName,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().let {
+                        if (alreadyOwned) it.alpha(0.4f) else it
+                    },
                     contentScale = ContentScale.Crop
                 )
             } else {
@@ -212,6 +228,22 @@ private fun PreconCard(deck: PreconDeck, onClick: () -> Unit) {
             ) {
                 Text(deck.setCode, fontSize = 9.sp, color = MTGGold,
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+            }
+            if (alreadyOwned) {
+                Surface(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color.Black.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Filled.Check, null, tint = MTGGold, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Bereits hinzugefügt", fontSize = 10.sp, color = MTGGold)
+                    }
+                }
             }
         }
 

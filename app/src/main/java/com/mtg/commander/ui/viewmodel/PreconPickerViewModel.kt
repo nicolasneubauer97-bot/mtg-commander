@@ -3,12 +3,17 @@ package com.mtg.commander.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.PreconRepository
 import com.mtg.commander.domain.model.PreconDeck
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+
+private fun normalizeDeckName(name: String) = name.trim().lowercase()
 
 data class PreconPickerUiState(
     val decks: List<PreconDeck> = emptyList(),
@@ -17,8 +22,13 @@ data class PreconPickerUiState(
     val preloadProgress: String = "",
     val error: String? = null,
     val networkWarning: Boolean = false,
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    // Normalized names of decks this player already owns — those precons can't be picked again
+    val ownedDeckNames: Set<String> = emptySet()
 ) {
+    fun isAlreadyOwned(deck: PreconDeck): Boolean =
+        normalizeDeckName(deck.name ?: "") in ownedDeckNames
+
     val filtered: List<PreconDeck> get() {
         if (searchQuery.isBlank()) return decks
         // Split query into words — every word must appear somewhere in the deck's data
@@ -83,12 +93,25 @@ val PRECON_ALIASES: Map<String, String> = mapOf(
     "wilhelt, the rotcleaver"         to "undead unleashed zombie untot",
 )
 
-class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
+class PreconPickerViewModel(
+    private val repo: PreconRepository,
+    private val deckRepository: DeckRepository,
+    private val playerId: Long
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PreconPickerUiState())
     val uiState: StateFlow<PreconPickerUiState> = _uiState.asStateFlow()
 
-    init { loadDecks() }
+    init {
+        loadDecks()
+        deckRepository.getDecksByPlayer(playerId)
+            .onEach { decks ->
+                _uiState.value = _uiState.value.copy(
+                    ownedDeckNames = decks.map { normalizeDeckName(it.name) }.toSet()
+                )
+            }
+            .launchIn(viewModelScope)
+    }
 
     private fun loadDecks(forceRefresh: Boolean = false) {
         viewModelScope.launch {
@@ -189,10 +212,11 @@ class PreconPickerViewModel(private val repo: PreconRepository) : ViewModel() {
     }
 
     companion object {
-        fun factory(repo: PreconRepository) = object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                PreconPickerViewModel(repo) as T
-        }
+        fun factory(repo: PreconRepository, deckRepository: DeckRepository, playerId: Long) =
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    PreconPickerViewModel(repo, deckRepository, playerId) as T
+            }
     }
 }
