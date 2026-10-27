@@ -121,6 +121,29 @@ fun HomeScreen(
             Spacer(Modifier.height(32.dp))
 
             TextButton(
+                onClick = vm::syncDeckNames,
+                enabled = !state.isSyncingDeckNames,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.secondary
+                )
+            ) {
+                if (state.isSyncingDeckNames) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(15.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                } else {
+                    Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(15.dp))
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (state.isSyncingDeckNames) "Decks werden aktualisiert…" else "Decks aktualisieren (deutsche Namen)",
+                    fontSize = 13.sp
+                )
+            }
+
+            TextButton(
                 onClick = vm::showResetDialog,
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.error.copy(alpha = 0.55f)
@@ -216,6 +239,19 @@ fun HomeScreen(
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
             Snackbar(modifier = Modifier.padding(16.dp)) {
                 Text("Statistiken wurden zurückgesetzt.")
+            }
+        }
+    }
+
+    // ─── Deck-Sync-Snackbar ───────────────────────────────────────────────────
+    state.syncMessage?.let { message ->
+        LaunchedEffect(message) {
+            kotlinx.coroutines.delay(3000)
+            vm.clearSyncMessage()
+        }
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            Snackbar(modifier = Modifier.padding(16.dp)) {
+                Text(message)
             }
         }
     }

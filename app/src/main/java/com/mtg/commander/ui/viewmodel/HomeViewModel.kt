@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtg.commander.MTGCommanderApp
+import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.GameRepository
+import com.mtg.commander.data.repository.PreconRepository
+import com.mtg.commander.data.repository.syncGermanCommanderNames
 import com.mtg.commander.domain.model.Game
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,10 +26,16 @@ data class HomeUiState(
     val showResetDialog: Boolean = false,
     val selectedReset: ResetOption = ResetOption.FINISHED_GAMES,
     val showResetConfirm: Boolean = false,
-    val resetDone: Boolean = false
+    val resetDone: Boolean = false,
+    val isSyncingDeckNames: Boolean = false,
+    val syncMessage: String? = null
 )
 
-class HomeViewModel(private val gameRepository: GameRepository) : ViewModel() {
+class HomeViewModel(
+    private val gameRepository: GameRepository,
+    private val deckRepository: DeckRepository,
+    private val preconRepository: PreconRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -97,11 +106,29 @@ class HomeViewModel(private val gameRepository: GameRepository) : ViewModel() {
         _uiState.value = _uiState.value.copy(resetDone = false)
     }
 
+    fun syncDeckNames() {
+        if (_uiState.value.isSyncingDeckNames) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSyncingDeckNames = true, syncMessage = null)
+            val message = try {
+                val updated = syncGermanCommanderNames(deckRepository, preconRepository)
+                if (updated > 0) "$updated Deck(s) aktualisiert" else "Alle Decks sind bereits aktuell"
+            } catch (_: Exception) {
+                "Aktualisierung fehlgeschlagen – Internetverbindung prüfen"
+            }
+            _uiState.value = _uiState.value.copy(isSyncingDeckNames = false, syncMessage = message)
+        }
+    }
+
+    fun clearSyncMessage() {
+        _uiState.value = _uiState.value.copy(syncMessage = null)
+    }
+
     companion object {
         fun factory(app: MTGCommanderApp) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                HomeViewModel(app.gameRepository) as T
+                HomeViewModel(app.gameRepository, app.deckRepository, app.preconRepository) as T
         }
     }
 }
