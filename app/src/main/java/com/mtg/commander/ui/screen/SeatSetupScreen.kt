@@ -245,7 +245,7 @@ private fun SeatCell(
                             textAlign = TextAlign.Center
                         )
                         Text(
-                            slot.selectedDeck.commanderName,
+                            commanderDisplayName(slot.selectedDeck),
                             fontSize = 9.sp,
                             color = MTGOnSurface,
                             maxLines = 1,
@@ -281,6 +281,11 @@ private fun SeatCell(
         }
     }
 }
+
+private fun commanderDisplayName(deck: Deck): String =
+    if (deck.commanderNameDe.isNotBlank() &&
+        !deck.commanderNameDe.equals(deck.commanderName, ignoreCase = true)
+    ) "${deck.commanderName} (${deck.commanderNameDe})" else deck.commanderName
 
 @Composable
 private fun SetupManaSymbol(color: Char) {
@@ -374,7 +379,7 @@ private fun SeatPickerDialog(
                                     text = {
                                         Column {
                                             Text(deck.name, fontWeight = FontWeight.SemiBold)
-                                            Text(deck.commanderName,
+                                            Text(commanderDisplayName(deck),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }

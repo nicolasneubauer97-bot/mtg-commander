@@ -32,12 +32,12 @@ class DeckRepository(private val deckDao: DeckDao) {
 
 private fun DeckEntity.toDomain() = Deck(
     id = id, playerId = playerId, name = name,
-    commanderName = commanderName, colors = colors,
+    commanderName = commanderName, commanderNameDe = commanderNameDe, colors = colors,
     imageUrl = imageUrl, createdAt = createdAt
 )
 
 private fun Deck.toEntity() = DeckEntity(
     id = id, playerId = playerId, name = name,
-    commanderName = commanderName, colors = colors,
+    commanderName = commanderName, commanderNameDe = commanderNameDe, colors = colors,
     imageUrl = imageUrl, createdAt = createdAt
 )

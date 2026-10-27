@@ -172,6 +172,9 @@ fun AppNavigation(navController: NavHostController) {
                         ?.set("picked_commander", precon.commanderName)
                     navController.previousBackStackEntry
                         ?.savedStateHandle
+                        ?.set("picked_commander_de", precon.commanderNameDe)
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
                         ?.set("picked_colors", precon.colors)
                     navController.previousBackStackEntry
                         ?.savedStateHandle

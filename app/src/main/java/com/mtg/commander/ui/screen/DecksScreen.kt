@@ -37,16 +37,18 @@ fun DecksScreen(
         sh.getStateFlow<String?>("picked_precon_name", null).collect { name ->
             if (name == null) return@collect
             val commander = sh.get<String>("picked_commander") ?: ""
+            val commanderDe = sh.get<String>("picked_commander_de") ?: ""
             val colors = sh.get<String>("picked_colors") ?: ""
             val imageUrl = sh.get<String>("picked_image_url") ?: ""
             val playerId = sh.get<Long>("picked_player_id") ?: return@collect
             val player = currentPlayers.find { it.id == playerId }
             if (player != null) {
                 vm.selectPlayer(player)
-                vm.importPrecon(name, commander, colors, imageUrl)
+                vm.importPrecon(name, commander, colors, imageUrl, commanderDe)
             }
             sh.remove<String>("picked_precon_name")
             sh.remove<String>("picked_commander")
+            sh.remove<String>("picked_commander_de")
             sh.remove<String>("picked_colors")
             sh.remove<String>("picked_image_url")
             sh.remove<Long>("picked_player_id")
@@ -130,7 +132,9 @@ fun DecksScreen(
         DeckDialog(
             initialDeck = state.editingDeck,
             title = if (state.editingDeck == null) "Deck anlegen" else "Deck bearbeiten",
-            onConfirm = { name, commander, colors -> vm.saveDeck(name, commander, colors) },
+            onConfirm = { name, commander, commanderDe, colors ->
+                vm.saveDeck(name, commander, colors, commanderNameDe = commanderDe)
+            },
             onDismiss = vm::dismissDialog
         )
     }
@@ -145,7 +149,10 @@ private fun DeckListItem(deck: Deck, onEdit: () -> Unit, onDelete: () -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(deck.name, style = MaterialTheme.typography.bodyLarge)
-                Text(deck.commanderName, style = MaterialTheme.typography.bodyMedium,
+                val commanderDisplay = if (deck.commanderNameDe.isNotBlank() &&
+                    !deck.commanderNameDe.equals(deck.commanderName, ignoreCase = true)
+                ) "${deck.commanderName} (${deck.commanderNameDe})" else deck.commanderName
+                Text(commanderDisplay, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.secondary)
                 if (deck.colors.isNotBlank()) {
                     Text(ColorUtils.toGerman(deck.colors), style = MaterialTheme.typography.bodySmall,
@@ -168,11 +175,12 @@ private fun DeckListItem(deck: Deck, onEdit: () -> Unit, onDelete: () -> Unit) {
 private fun DeckDialog(
     initialDeck: Deck?,
     title: String,
-    onConfirm: (String, String, String) -> Unit,
+    onConfirm: (String, String, String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf(initialDeck?.name ?: "") }
     var commander by remember { mutableStateOf(initialDeck?.commanderName ?: "") }
+    var commanderDe by remember { mutableStateOf(initialDeck?.commanderNameDe ?: "") }
     var colors by remember { mutableStateOf(initialDeck?.colors ?: "") }
 
     AlertDialog(
@@ -184,7 +192,10 @@ private fun DeckDialog(
                     label = { Text("Deckname") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = commander, onValueChange = { commander = it },
-                    label = { Text("Commander") }, singleLine = true,
+                    label = { Text("Commander (Englisch)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = commanderDe, onValueChange = { commanderDe = it },
+                    label = { Text("Commander (Deutsch, optional)") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = colors, onValueChange = { colors = it },
                     label = { Text("Farben (W=Weiß U=Blau B=Schwarz R=Rot G=Grün)") }, singleLine = true,
@@ -193,7 +204,7 @@ private fun DeckDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { if (name.isNotBlank() && commander.isNotBlank()) onConfirm(name, commander, colors) },
+                onClick = { if (name.isNotBlank() && commander.isNotBlank()) onConfirm(name, commander, commanderDe, colors) },
                 enabled = name.isNotBlank() && commander.isNotBlank()
             ) { Text("Speichern") }
         },

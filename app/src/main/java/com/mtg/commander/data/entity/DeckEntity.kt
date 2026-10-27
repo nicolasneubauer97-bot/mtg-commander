@@ -23,6 +23,7 @@ data class DeckEntity(
     val playerId: Long,
     val name: String,
     val commanderName: String,
+    val commanderNameDe: String = "",
     val colors: String,
     val imageUrl: String = "",
     val createdAt: Long = System.currentTimeMillis()
