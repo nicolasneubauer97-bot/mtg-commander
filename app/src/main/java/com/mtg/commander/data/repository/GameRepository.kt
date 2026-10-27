@@ -176,6 +176,13 @@ class GameRepository(
         return Pair(wins, total)
     }
 
+    suspend fun getPlayerWinCount(playerId: Long): Int =
+        participantDao.countWinsForPlayer(playerId)
+
+    suspend fun getPlayerCommanderWinCount(playerId: Long, commanderName: String): Int =
+        if (commanderName.isBlank()) 0
+        else participantDao.countWinsForPlayerWithCommander(playerId, commanderName)
+
     suspend fun abandonGame(gameId: Long) {
         val game = gameDao.getGameById(gameId) ?: return
         gameDao.updateGame(game.copy(status = GameStatus.ABANDONED, endedAt = System.currentTimeMillis()))

@@ -50,6 +50,22 @@ interface GameParticipantDao {
     """)
     suspend fun countWinsForDeck(deckId: Long): Int
 
+    @Query("""
+        SELECT COUNT(*) FROM game_participants gp
+        INNER JOIN games g ON gp.gameId = g.id
+        WHERE gp.playerId = :playerId AND g.status = 'FINISHED' AND gp.placement = 1
+    """)
+    suspend fun countWinsForPlayer(playerId: Long): Int
+
+    @Query("""
+        SELECT COUNT(*) FROM game_participants gp
+        INNER JOIN games g ON gp.gameId = g.id
+        INNER JOIN decks d ON gp.deckId = d.id
+        WHERE gp.playerId = :playerId AND d.commanderName = :commanderName
+          AND g.status = 'FINISHED' AND gp.placement = 1
+    """)
+    suspend fun countWinsForPlayerWithCommander(playerId: Long, commanderName: String): Int
+
     @Insert
     suspend fun insertParticipant(participant: GameParticipantEntity): Long
 

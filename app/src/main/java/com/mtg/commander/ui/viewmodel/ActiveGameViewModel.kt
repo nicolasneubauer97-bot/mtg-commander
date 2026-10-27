@@ -66,7 +66,11 @@ data class ActiveGameUiState(
     val playerThemes: Map<Long, Int> = emptyMap(),
     // Victory overlay
     val showVictoryFor: Long? = null,
-    val victoryDismissed: Boolean = false
+    val victoryDismissed: Boolean = false,
+    // Winner's win counts, loaded once when the victory overlay first appears
+    val winnerStatsForParticipantId: Long? = null,
+    val winnerTotalWins: Int = 0,
+    val winnerCommanderWins: Int = 0
 ) {
     val currentTurnPlayer: ParticipantUiState? get() =
         participants.find { it.participant.id == currentTurnParticipantId }
@@ -147,6 +151,21 @@ class ActiveGameViewModel(
                 // Read UI-only state from CURRENT value (not stale cur) to avoid race conditions
                 val latestUi = _uiState.value
 
+                // Winner win-counts: fetch once per newly-detected victory, not on every emission
+                var winnerStatsFor = latestUi.winnerStatsForParticipantId
+                var winnerTotalWins = latestUi.winnerTotalWins
+                var winnerCommanderWins = latestUi.winnerCommanderWins
+                if (autoVictory != null && winnerStatsFor != autoVictory) {
+                    val winnerState = participantUiStates.find { it.participant.id == autoVictory }
+                    if (winnerState != null) {
+                        winnerTotalWins = gameRepository.getPlayerWinCount(winnerState.player.id)
+                        winnerCommanderWins = winnerState.deck?.let {
+                            gameRepository.getPlayerCommanderWinCount(winnerState.player.id, it.commanderName)
+                        } ?: 0
+                        winnerStatsFor = autoVictory
+                    }
+                }
+
                 val (crown, trash) = computeCrownTrash(participantUiStates, emptyMap())
                 _uiState.value = cur.copy(
                     game = game, participants = participantUiStates,
@@ -156,6 +175,9 @@ class ActiveGameViewModel(
                     currentTurnParticipantId = currentTurn,
                     crownPlayerId = crown, trashPlayerId = trash,
                     showVictoryFor = autoVictory,
+                    winnerStatsForParticipantId = winnerStatsFor,
+                    winnerTotalWins = winnerTotalWins,
+                    winnerCommanderWins = winnerCommanderWins,
                     // Preserve transient UI state from the LATEST version (not stale cur)
                     showEliminateDialogFor = latestUi.showEliminateDialogFor,
                     showEndGameConfirm = latestUi.showEndGameConfirm,

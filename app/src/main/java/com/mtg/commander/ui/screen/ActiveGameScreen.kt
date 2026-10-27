@@ -222,6 +222,8 @@ fun ActiveGameScreen(
                 participants = state.participants,
                 kills = state.kills,
                 commanderDamage = state.commanderDamage,
+                totalWins = state.winnerTotalWins,
+                commanderWins = state.winnerCommanderWins,
                 onShowDetail = {
                     vm.dismissVictory()
                     onNavigateToDetail(gameId)
@@ -843,6 +845,8 @@ private fun VictoryOverlay(
     participants: List<ParticipantUiState>,
     kills: List<Kill>,
     commanderDamage: List<CommanderDamage>,
+    totalWins: Int,
+    commanderWins: Int,
     onShowDetail: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -911,12 +915,41 @@ private fun VictoryOverlay(
             Text(winnerName, style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold, color = Color.White,
                 textAlign = TextAlign.Center)
-            winner.deck?.let { d ->
+            val winnerDeck = winner.deck
+            winnerDeck?.let { d ->
                 Spacer(Modifier.height(4.dp))
                 Text(d.name, style = MaterialTheme.typography.titleMedium,
                     color = MTGGold, textAlign = TextAlign.Center)
                 Text(commanderDisplayName(d), style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center)
+            }
+            if (totalWins > 0) {
+                Spacer(Modifier.height(14.dp))
+                Surface(
+                    color = MTGGold.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, MTGGold.copy(alpha = 0.4f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "🏆 $totalWins. Sieg insgesamt",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold, color = MTGGold,
+                            textAlign = TextAlign.Center
+                        )
+                        if (winnerDeck != null && commanderWins > 0) {
+                            Text(
+                                "$commanderWins. Sieg mit ${commanderDisplayName(winnerDeck)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.8f),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
             }
             if (winnerName.trim().lowercase() == "dave") {
                 Spacer(Modifier.height(6.dp))
