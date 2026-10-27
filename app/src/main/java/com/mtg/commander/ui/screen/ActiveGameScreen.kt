@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -42,9 +43,12 @@ import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.mtg.commander.MTGCommanderApp
+import com.mtg.commander.domain.model.CommanderDamage
+import com.mtg.commander.domain.model.Kill
 import com.mtg.commander.ui.theme.EliminatedColor
 import com.mtg.commander.ui.theme.MTGGold
 import com.mtg.commander.ui.theme.WinnerColor
+import com.mtg.commander.ui.utils.commanderDisplayName
 import com.mtg.commander.ui.viewmodel.ActiveGameUiState
 import com.mtg.commander.ui.viewmodel.ActiveGameViewModel
 import com.mtg.commander.ui.viewmodel.ParticipantUiState
@@ -214,7 +218,10 @@ fun ActiveGameScreen(
         val winner = state.participants.find { it.participant.id == winnerParticipantId }
         if (winner != null) {
             VictoryOverlay(
-                winnerName = winner.player.name,
+                winner = winner,
+                participants = state.participants,
+                kills = state.kills,
+                commanderDamage = state.commanderDamage,
                 onShowDetail = {
                     vm.dismissVictory()
                     onNavigateToDetail(gameId)
@@ -596,7 +603,7 @@ private fun MiniPlayerPanel(
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = if (p.isEliminated) EliminatedColor else contentColor)
                 pState.deck?.let { d ->
-                    Text(" · ${d.commanderName}", fontSize = tinyFs,
+                    Text(" · ${commanderDisplayName(d)}", fontSize = tinyFs,
                         color = MaterialTheme.colorScheme.secondary,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -823,49 +830,158 @@ private fun CommanderDamageOverlay(
 
 // ─── Sieger-Overlay ──────────────────────────────────────────────────────────
 
+private data class VictoryStatRow(
+    val participantId: Long,
+    val playerName: String,
+    val kills: Int,
+    val damageDealt: Int
+)
+
 @Composable
-private fun VictoryOverlay(winnerName: String, onShowDetail: () -> Unit, onDismiss: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.75f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
-            modifier = Modifier.width(300.dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(2.dp, WinnerColor),
-            elevation = CardDefaults.cardElevation(16.dp)
+private fun VictoryOverlay(
+    winner: ParticipantUiState,
+    participants: List<ParticipantUiState>,
+    kills: List<Kill>,
+    commanderDamage: List<CommanderDamage>,
+    onShowDetail: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val winnerName = winner.player.name
+    val imageUrl = winner.deck?.imageUrl?.takeIf { it.isNotBlank() }
+    val context = LocalContext.current
+
+    val statRows = remember(participants, kills, commanderDamage) {
+        participants
+            .map { p ->
+                VictoryStatRow(
+                    participantId = p.participant.id,
+                    playerName = p.player.name,
+                    kills = kills.count { it.killerParticipantId == p.participant.id },
+                    damageDealt = commanderDamage
+                        .filter { it.attackerParticipantId == p.participant.id }
+                        .sumOf { it.damage }
+                )
+            }
+            .sortedWith(compareByDescending<VictoryStatRow> { it.kills }.thenByDescending { it.damageDealt })
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // ─── Hintergrund: Commander-Bild des Siegers, grossflächig ────────────
+        if (imageUrl != null) {
+            AsyncImage(
+                model = remember(imageUrl) {
+                    ImageRequest.Builder(context)
+                        .data(imageUrl)
+                        .addHeader("User-Agent", "MTGCommander/1.0 Android")
+                        .addHeader("Accept", "image/*")
+                        .build()
+                },
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                alpha = 0.55f
+            )
+        }
+        Box(
+            modifier = Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color.Black.copy(alpha = 0.55f),
+                        Color.Black.copy(alpha = 0.75f),
+                        Color.Black.copy(alpha = 0.92f)
+                    )
+                )
+            )
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                Modifier.padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Spacer(Modifier.height(16.dp))
+            Text("★ ★ ★", fontSize = 28.sp, color = WinnerColor)
+            Spacer(Modifier.height(8.dp))
+            Text("SIEGER", style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.ExtraBold, color = WinnerColor,
+                textAlign = TextAlign.Center)
+            Spacer(Modifier.height(12.dp))
+            Text(winnerName, style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold, color = Color.White,
+                textAlign = TextAlign.Center)
+            winner.deck?.let { d ->
+                Spacer(Modifier.height(4.dp))
+                Text(d.name, style = MaterialTheme.typography.titleMedium,
+                    color = MTGGold, textAlign = TextAlign.Center)
+                Text(commanderDisplayName(d), style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center)
+            }
+            if (winnerName.trim().lowercase() == "dave") {
+                Spacer(Modifier.height(6.dp))
+                Text("sicher wieder bschisse 🤨",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center)
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            // ─── Statistiken aller Spieler ─────────────────────────────────────
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.45f)),
+                border = BorderStroke(1.dp, MTGGold.copy(alpha = 0.4f))
             ) {
-                Text("★", fontSize = 48.sp, color = WinnerColor)
-                Spacer(Modifier.height(8.dp))
-                Text("Sieger!", style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold, color = WinnerColor)
-                Spacer(Modifier.height(8.dp))
-                Text(winnerName, style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                if (winnerName.trim().lowercase() == "dave") {
-                    Spacer(Modifier.height(4.dp))
-                    Text("sicher wieder bschisse 🤨",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center)
+                Column(Modifier.padding(16.dp)) {
+                    Text("Spielstatistik", style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold, color = MTGGold)
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        Text("Spieler", modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.6f))
+                        Text("Kills", modifier = Modifier.width(56.dp), textAlign = TextAlign.End,
+                            style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.6f))
+                        Text("Schaden", modifier = Modifier.width(72.dp), textAlign = TextAlign.End,
+                            style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.6f))
+                    }
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.15f),
+                        modifier = Modifier.padding(vertical = 6.dp))
+                    statRows.forEach { row ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                row.playerName,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                fontWeight = if (row.participantId == winner.participant.id) FontWeight.Bold else FontWeight.Normal,
+                                color = if (row.participantId == winner.participant.id) MTGGold else Color.White
+                            )
+                            Text("${row.kills}", modifier = Modifier.width(56.dp),
+                                textAlign = TextAlign.End, color = Color.White)
+                            Text("${row.damageDealt}", modifier = Modifier.width(72.dp),
+                                textAlign = TextAlign.End, color = Color.White)
+                        }
+                    }
                 }
-                Spacer(Modifier.height(24.dp))
-                Button(
-                    onClick = onShowDetail,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Filled.Assessment, null, Modifier.padding(end = 6.dp))
-                    Text("Ergebnis anzeigen")
-                }
-                Spacer(Modifier.height(8.dp))
-                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                    Text("Hauptmenü")
-                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+            Button(
+                onClick = onShowDetail,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MTGGold)
+            ) {
+                Icon(Icons.Filled.Assessment, null, tint = Color.Black, modifier = Modifier.padding(end = 6.dp))
+                Text("Ergebnis anzeigen", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text("Hauptmenü", color = Color.White.copy(alpha = 0.8f))
             }
         }
     }
@@ -1103,7 +1219,7 @@ private fun FullPlayerCard(
                                 style = MaterialTheme.typography.titleMedium)
                         }
                         pState.deck?.let { d ->
-                            Text("${d.name} · ${d.commanderName}",
+                            Text("${d.name} · ${commanderDisplayName(d)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.secondary,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)

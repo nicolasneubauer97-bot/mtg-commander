@@ -22,6 +22,8 @@ interface RandomOpponentPickDao {
         FROM random_opponent_picks rop
         JOIN game_participants gp1 ON rop.chooserParticipantId = gp1.id
         JOIN game_participants gp2 ON rop.chosenParticipantId = gp2.id
+        JOIN games g ON gp1.gameId = g.id
+        WHERE g.status = 'FINISHED'
         GROUP BY gp1.playerId, gp2.playerId
         ORDER BY COUNT(*) DESC
     """)

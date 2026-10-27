@@ -18,6 +18,8 @@ interface DiceRollDao {
         SELECT gp.playerId AS rollerPlayerId, dr.value AS value, COUNT(*) AS rollCount
         FROM dice_rolls dr
         JOIN game_participants gp ON dr.rollerParticipantId = gp.id
+        JOIN games g ON gp.gameId = g.id
+        WHERE g.status = 'FINISHED'
         GROUP BY gp.playerId, dr.value
         ORDER BY gp.playerId, dr.value
     """)

@@ -26,6 +26,7 @@ import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.domain.model.Deck
 import com.mtg.commander.domain.model.Player
 import com.mtg.commander.ui.theme.*
+import com.mtg.commander.ui.utils.commanderDisplayName
 import com.mtg.commander.ui.viewmodel.SeatSetupViewModel
 import com.mtg.commander.ui.viewmodel.SeatSlot
 
@@ -281,11 +282,6 @@ private fun SeatCell(
         }
     }
 }
-
-private fun commanderDisplayName(deck: Deck): String =
-    if (deck.commanderNameDe.isNotBlank() &&
-        !deck.commanderNameDe.equals(deck.commanderName, ignoreCase = true)
-    ) "${deck.commanderName} (${deck.commanderNameDe})" else deck.commanderName
 
 @Composable
 private fun SetupManaSymbol(color: Char) {

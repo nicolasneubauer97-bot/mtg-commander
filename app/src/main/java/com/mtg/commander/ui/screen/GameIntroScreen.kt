@@ -31,6 +31,7 @@ import com.mtg.commander.data.repository.PlayerRepository
 import com.mtg.commander.domain.model.Deck
 import com.mtg.commander.domain.model.Player
 import com.mtg.commander.ui.theme.*
+import com.mtg.commander.ui.utils.commanderDisplayName
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -239,7 +240,7 @@ private fun IntroPlayerCard(info: IntroPlayerInfo) {
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        info.deck.commanderName,
+                        commanderDisplayName(info.deck),
                         fontSize = 11.sp,
                         color = MTGGold.copy(alpha = 0.8f),
                         maxLines = 1,

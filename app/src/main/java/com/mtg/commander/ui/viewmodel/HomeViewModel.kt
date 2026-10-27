@@ -34,7 +34,18 @@ class HomeViewModel(private val gameRepository: GameRepository) : ViewModel() {
     init {
         viewModelScope.launch {
             gameRepository.getActiveGames().collect { activeGames ->
-                _uiState.value = _uiState.value.copy(activeGame = activeGames.firstOrNull())
+                val candidate = activeGames.firstOrNull()
+                // Defensive check: a game with a winner already decided must never be
+                // offered as "resume", even if its status was somehow not flipped to FINISHED.
+                val resumable = candidate?.let { game ->
+                    val participants = gameRepository.getParticipantsForGameSync(game.id)
+                    val hasWinner = participants.any { it.placement == 1 }
+                    if (hasWinner) {
+                        gameRepository.updateGame(game.copy(status = "FINISHED", endedAt = System.currentTimeMillis()))
+                        null
+                    } else game
+                }
+                _uiState.value = _uiState.value.copy(activeGame = resumable)
             }
         }
     }

@@ -17,6 +17,7 @@ import androidx.navigation.NavBackStackEntry
 import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.domain.model.Deck
 import com.mtg.commander.ui.utils.ColorUtils
+import com.mtg.commander.ui.utils.commanderDisplayName
 import com.mtg.commander.ui.viewmodel.DecksViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -149,10 +150,7 @@ private fun DeckListItem(deck: Deck, onEdit: () -> Unit, onDelete: () -> Unit) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(deck.name, style = MaterialTheme.typography.bodyLarge)
-                val commanderDisplay = if (deck.commanderNameDe.isNotBlank() &&
-                    !deck.commanderNameDe.equals(deck.commanderName, ignoreCase = true)
-                ) "${deck.commanderName} (${deck.commanderNameDe})" else deck.commanderName
-                Text(commanderDisplay, style = MaterialTheme.typography.bodyMedium,
+                Text(commanderDisplayName(deck), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.secondary)
                 if (deck.colors.isNotBlank()) {
                     Text(ColorUtils.toGerman(deck.colors), style = MaterialTheme.typography.bodySmall,
