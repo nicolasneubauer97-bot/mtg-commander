@@ -22,9 +22,10 @@ import com.mtg.commander.data.entity.TurnDurationEntity
         LifeChangeEventEntity::class,
         RandomOpponentPickEntity::class,
         DiceRollEntity::class,
-        TurnDurationEntity::class
+        TurnDurationEntity::class,
+        AchievementShownEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -39,6 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun randomOpponentPickDao(): RandomOpponentPickDao
     abstract fun diceRollDao(): DiceRollDao
     abstract fun turnDurationDao(): TurnDurationDao
+    abstract fun achievementShownDao(): AchievementShownDao
 
     companion object {
         @Volatile
@@ -174,6 +176,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `achievement_shown` (
+                        `playerId` INTEGER NOT NULL,
+                        `achievementId` TEXT NOT NULL,
+                        `shownTier` TEXT NOT NULL,
+                        PRIMARY KEY(`playerId`, `achievementId`)
+                    )
+                """)
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(
@@ -181,7 +196,10 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "mtg_commander.db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(
+                    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
+                    MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10
+                )
                 .build().also { INSTANCE = it }
             }
     }

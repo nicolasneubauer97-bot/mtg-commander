@@ -35,6 +35,7 @@ sealed class Screen(val route: String) {
     }
     object RandomOpponentStats : Screen("random_opponent_stats")
     object GlobalDamageStats : Screen("global_damage_stats")
+    object Badges : Screen("badges")
 }
 
 @Composable
@@ -53,8 +54,12 @@ fun AppNavigation(navController: NavHostController) {
                 onDeckStats = { navController.navigate(Screen.DeckStats.route) },
                 onHistory = { navController.navigate(Screen.GameHistory.route) },
                 onRandomStats = { navController.navigate(Screen.RandomOpponentStats.route) },
-                onGlobalDamage = { navController.navigate(Screen.GlobalDamageStats.route) }
+                onGlobalDamage = { navController.navigate(Screen.GlobalDamageStats.route) },
+                onBadges = { navController.navigate(Screen.Badges.route) }
             )
+        }
+        composable(Screen.Badges.route) {
+            BadgesScreen(app = app, onBack = { navController.popBackStack() })
         }
         composable(Screen.Players.route) {
             PlayersScreen(app = app, onBack = { navController.popBackStack() })

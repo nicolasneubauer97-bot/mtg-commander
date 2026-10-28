@@ -46,8 +46,15 @@ import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.mtg.commander.MTGCommanderApp
+import com.mtg.commander.audio.SoundEffects
+import com.mtg.commander.domain.model.AchievementId
+import com.mtg.commander.domain.model.AchievementPopupEvent
+import com.mtg.commander.domain.model.AchievementProgress
+import com.mtg.commander.domain.model.AchievementTier
 import com.mtg.commander.domain.model.CommanderDamage
 import com.mtg.commander.domain.model.Kill
+import com.mtg.commander.ui.components.AchievementHexBadge
+import com.mtg.commander.ui.components.achievementIcon
 import com.mtg.commander.ui.theme.EliminatedColor
 import com.mtg.commander.ui.theme.MTGGold
 import com.mtg.commander.ui.theme.WinnerColor
@@ -239,6 +246,14 @@ fun ActiveGameScreen(
                     onBack()
                 }
             )
+        }
+    }
+
+    // ─── Achievement-Popup ──────────────────────────────────────────────────────
+    // Deferred while the victory overlay is up, so they never stack.
+    if (state.showVictoryFor == null) {
+        state.achievementPopupQueue.firstOrNull()?.let { event ->
+            AchievementPopupOverlay(event = event, onDismiss = vm::dismissAchievementPopup)
         }
     }
 
@@ -523,6 +538,31 @@ private fun PlayerCell(
     }
 }
 
+// ─── Achievement-Badges (2 Reihen à 5 + Rang grösser, zentriert darunter) ────
+
+@Composable
+private fun AchievementBadgeRow(
+    achievements: List<AchievementProgress>,
+    rang: AchievementTier,
+    badgeSize: Dp,
+    rangSize: Dp
+) {
+    if (achievements.isEmpty()) return
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(badgeSize * 0.14f)
+    ) {
+        achievements.chunked(5).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(badgeSize * 0.22f)) {
+                row.forEach { ach ->
+                    AchievementHexBadge(achievementIcon(ach.id), ach.tier, size = badgeSize)
+                }
+            }
+        }
+        AchievementHexBadge(achievementIcon(AchievementId.RANG), rang, size = rangSize)
+    }
+}
+
 @Composable
 private fun MiniPlayerPanel(
     vm: ActiveGameViewModel, state: ActiveGameUiState,
@@ -616,6 +656,15 @@ private fun MiniPlayerPanel(
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+
+            // ─── Achievement-Badges ────────────────────────────────────────────────
+            val badgeSz = (cellH.value * 0.045f).coerceIn(7f, 15f).dp
+            val rangSz = (cellH.value * 0.075f).coerceIn(11f, 24f).dp
+            AchievementBadgeRow(
+                achievements = state.playerAchievements[pState.player.id] ?: emptyList(),
+                rang = state.playerRang[pState.player.id] ?: AchievementTier.NONE,
+                badgeSize = badgeSz, rangSize = rangSz
+            )
 
             // ─── Lebenspunkte ────────────────────────────────────────────────────
             Row(
@@ -1043,6 +1092,53 @@ private data class ConfettiParticle(
 )
 
 @Composable
+private fun AchievementPopupOverlay(event: AchievementPopupEvent, onDismiss: () -> Unit) {
+    LaunchedEffect(event) {
+        SoundEffects.playVictory()
+        kotlinx.coroutines.delay(2500)
+        onDismiss()
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.width(300.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(2.dp, MTGGold),
+            elevation = CardDefaults.cardElevation(16.dp)
+        ) {
+            Column(
+                Modifier.padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "ACHIEVEMENT AUFGESTIEGEN", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp, color = MTGGold
+                )
+                Spacer(Modifier.height(14.dp))
+                AchievementHexBadge(achievementIcon(event.achievementId), event.newTier, size = 72.dp)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    event.achievementId.germanName, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "${event.playerName} → ${event.newTier.germanLabel}",
+                    fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MTGGold
+                )
+            }
+        }
+        ConfettiOverlay(modifier = Modifier.fillMaxSize())
+    }
+}
+
+@Composable
 private fun ConfettiOverlay(modifier: Modifier = Modifier) {
     val palette = listOf(MTGGold, Color.White, Color(0xFFD3202A), Color(0xFF3A8FD3), Color(0xFF3FAE62))
     val particles = remember {
@@ -1330,6 +1426,12 @@ private fun FullPlayerCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (p.isEliminated) Text("Eliminiert – Platz ${p.placement}",
                             style = MaterialTheme.typography.bodySmall, color = EliminatedColor)
+                        Spacer(Modifier.height(4.dp))
+                        AchievementBadgeRow(
+                            achievements = state.playerAchievements[pState.player.id] ?: emptyList(),
+                            rang = state.playerRang[pState.player.id] ?: AchievementTier.NONE,
+                            badgeSize = 20.dp, rangSize = 30.dp
+                        )
                     }
                 }
                 Row(Modifier.fillMaxWidth(), Arrangement.Center, Alignment.CenterVertically) {

@@ -37,7 +37,8 @@ fun HomeScreen(
     onDeckStats: () -> Unit,
     onHistory: () -> Unit,
     onRandomStats: () -> Unit = {},
-    onGlobalDamage: () -> Unit = {}
+    onGlobalDamage: () -> Unit = {},
+    onBadges: () -> Unit = {}
 ) {
     val vm: HomeViewModel = viewModel(factory = HomeViewModel.factory(app))
     val state by vm.uiState.collectAsStateWithLifecycle()
@@ -114,8 +115,8 @@ fun HomeScreen(
             }
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                HomeNavCard(Icons.Filled.FlashOn,   "Schaden-Stats",  Modifier.weight(1f), onGlobalDamage)
-                Spacer(Modifier.weight(1f))
+                HomeNavCard(Icons.Filled.FlashOn,       "Schaden-Stats", Modifier.weight(1f), onGlobalDamage)
+                HomeNavCard(Icons.Filled.MilitaryTech,  "Badges",        Modifier.weight(1f), onBadges)
             }
 
             Spacer(Modifier.height(32.dp))

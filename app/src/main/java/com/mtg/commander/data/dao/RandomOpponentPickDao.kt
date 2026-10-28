@@ -31,4 +31,12 @@ interface RandomOpponentPickDao {
 
     @Query("DELETE FROM random_opponent_picks")
     suspend fun deleteAll()
+
+    // Achievements: ueber ALLE Spiele (auch laufende), damit Fortschritt live sichtbar ist
+    @Query("""
+        SELECT COUNT(*) FROM random_opponent_picks rop
+        INNER JOIN game_participants gp ON rop.chosenParticipantId = gp.id
+        WHERE gp.playerId = :playerId
+    """)
+    suspend fun countTimesChosenForPlayer(playerId: Long): Int
 }

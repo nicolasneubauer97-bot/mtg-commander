@@ -28,4 +28,12 @@ interface CommanderDamageDao {
 
     @Query("DELETE FROM commander_damage")
     suspend fun deleteAllCommanderDamage()
+
+    // Achievements: ueber ALLE Spiele (auch laufende), damit Fortschritt live sichtbar ist
+    @Query("""
+        SELECT COALESCE(SUM(cd.damage), 0) FROM commander_damage cd
+        INNER JOIN game_participants gp ON cd.attackerParticipantId = gp.id
+        WHERE gp.playerId = :playerId
+    """)
+    suspend fun sumCommanderDamageForPlayer(playerId: Long): Int
 }

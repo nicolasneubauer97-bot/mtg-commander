@@ -2,6 +2,7 @@ package com.mtg.commander
 
 import android.app.Application
 import com.mtg.commander.data.db.AppDatabase
+import com.mtg.commander.data.repository.AchievementRepository
 import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.GameRepository
 import com.mtg.commander.data.repository.PlayerRepository
@@ -42,6 +43,12 @@ class MTGCommanderApp : Application() {
         )
     }
     val preconRepository by lazy { PreconRepository(this) }
+    val achievementRepository by lazy {
+        AchievementRepository(
+            database.gameParticipantDao(), database.killDao(), database.commanderDamageDao(),
+            database.lifeChangeEventDao(), database.randomOpponentPickDao(), database.achievementShownDao()
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()

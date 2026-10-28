@@ -36,4 +36,20 @@ interface LifeChangeEventDao {
 
     @Query("DELETE FROM life_change_events")
     suspend fun deleteAll()
+
+    // ─── Achievements: ueber ALLE Spiele (auch laufende), damit Fortschritt live sichtbar ist ──
+
+    @Query("""
+        SELECT COALESCE(SUM(lce.delta), 0) FROM life_change_events lce
+        INNER JOIN game_participants gp ON lce.targetParticipantId = gp.id
+        WHERE gp.playerId = :playerId AND lce.delta > 0
+    """)
+    suspend fun sumLifeGainedForPlayer(playerId: Long): Int
+
+    @Query("""
+        SELECT COALESCE(SUM(-lce.delta), 0) FROM life_change_events lce
+        INNER JOIN game_participants gp ON lce.activeTurnParticipantId = gp.id
+        WHERE gp.playerId = :playerId AND lce.targetParticipantId != lce.activeTurnParticipantId AND lce.delta < 0
+    """)
+    suspend fun sumDamageDealtByPlayer(playerId: Long): Int
 }

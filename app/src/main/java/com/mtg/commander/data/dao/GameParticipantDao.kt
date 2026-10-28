@@ -66,6 +66,21 @@ interface GameParticipantDao {
     """)
     suspend fun countWinsForPlayerWithCommander(playerId: Long, commanderName: String): Int
 
+    // ─── Achievements: ueber ALLE Spiele (auch laufende), damit Fortschritt live sichtbar ist ──
+
+    @Query("SELECT COUNT(*) FROM game_participants WHERE playerId = :playerId")
+    suspend fun countAllGamesForPlayer(playerId: Long): Int
+
+    @Query("""
+        SELECT COUNT(*) FROM games g
+        INNER JOIN game_participants gp ON g.startingParticipantId = gp.id
+        WHERE gp.playerId = :playerId
+    """)
+    suspend fun countStarterGamesForPlayer(playerId: Long): Int
+
+    @Query("SELECT COUNT(*) FROM game_participants WHERE playerId = :playerId AND placement = 1 AND currentLife >= 40")
+    suspend fun countImmortalWins(playerId: Long): Int
+
     @Insert
     suspend fun insertParticipant(participant: GameParticipantEntity): Long
 

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.audio.SoundEffects
+import com.mtg.commander.data.repository.AchievementRepository
 import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.GameRepository
 import com.mtg.commander.data.repository.PlayerRepository
@@ -71,7 +72,11 @@ data class ActiveGameUiState(
     // Winner's win counts, loaded once when the victory overlay first appears
     val winnerStatsForParticipantId: Long? = null,
     val winnerTotalWins: Int = 0,
-    val winnerCommanderWins: Int = 0
+    val winnerCommanderWins: Int = 0,
+    // Achievements: live progress per player, shown under their name
+    val playerAchievements: Map<Long, List<AchievementProgress>> = emptyMap(),
+    val playerRang: Map<Long, AchievementTier> = emptyMap(),
+    val achievementPopupQueue: List<AchievementPopupEvent> = emptyList()
 ) {
     val currentTurnPlayer: ParticipantUiState? get() =
         participants.find { it.participant.id == currentTurnParticipantId }
@@ -84,7 +89,8 @@ class ActiveGameViewModel(
     private val gameRepository: GameRepository,
     private val playerRepository: PlayerRepository,
     private val deckRepository: DeckRepository,
-    private val statsRepository: StatsRepository
+    private val statsRepository: StatsRepository,
+    private val achievementRepository: AchievementRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ActiveGameUiState())
@@ -168,6 +174,32 @@ class ActiveGameViewModel(
                     }
                 }
 
+                // Achievements: recompute live progress per player and detect tier-ups since
+                // the last time an unlock was actually shown (persisted, survives app restarts).
+                val achievementsByPlayer = mutableMapOf<Long, List<AchievementProgress>>()
+                val rangByPlayer = mutableMapOf<Long, AchievementTier>()
+                val newPopups = mutableListOf<AchievementPopupEvent>()
+                for (playerId in participantUiStates.map { it.player.id }.distinct()) {
+                    val achievements = achievementRepository.getAchievements(playerId)
+                    val rang = achievementRepository.computeRang(achievements)
+                    achievementsByPlayer[playerId] = achievements
+                    rangByPlayer[playerId] = rang
+                    val shown = achievementRepository.getShownTiers(playerId)
+                    val playerName = participantUiStates.first { it.player.id == playerId }.player.name
+                    achievements.forEach { ach ->
+                        val shownTier = shown[ach.id] ?: AchievementTier.NONE
+                        if (ach.tier.order > shownTier.order) {
+                            newPopups.add(AchievementPopupEvent(playerName, ach.id, ach.tier))
+                            achievementRepository.markShown(playerId, ach.id, ach.tier)
+                        }
+                    }
+                    val shownRang = shown[AchievementId.RANG] ?: AchievementTier.NONE
+                    if (rang.order > shownRang.order) {
+                        newPopups.add(AchievementPopupEvent(playerName, AchievementId.RANG, rang))
+                        achievementRepository.markShown(playerId, AchievementId.RANG, rang)
+                    }
+                }
+
                 val (crown, trash) = computeCrownTrash(participantUiStates, emptyMap())
                 _uiState.value = cur.copy(
                     game = game, participants = participantUiStates,
@@ -180,6 +212,9 @@ class ActiveGameViewModel(
                     winnerStatsForParticipantId = winnerStatsFor,
                     winnerTotalWins = winnerTotalWins,
                     winnerCommanderWins = winnerCommanderWins,
+                    playerAchievements = achievementsByPlayer,
+                    playerRang = rangByPlayer,
+                    achievementPopupQueue = latestUi.achievementPopupQueue + newPopups,
                     // Preserve transient UI state from the LATEST version (not stale cur)
                     showEliminateDialogFor = latestUi.showEliminateDialogFor,
                     showEndGameConfirm = latestUi.showEndGameConfirm,
@@ -394,6 +429,12 @@ class ActiveGameViewModel(
 
     fun dismissVictory() {
         _uiState.value = _uiState.value.copy(showVictoryFor = null, victoryDismissed = true)
+    }
+
+    fun dismissAchievementPopup() {
+        val queue = _uiState.value.achievementPopupQueue
+        if (queue.isEmpty()) return
+        _uiState.value = _uiState.value.copy(achievementPopupQueue = queue.drop(1))
     }
 
     fun cyclePlayerTheme(participantId: Long) {
@@ -665,7 +706,7 @@ class ActiveGameViewModel(
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
                 ActiveGameViewModel(gameId, app.gameRepository,
                     app.playerRepository, app.deckRepository,
-                    app.statsRepository) as T
+                    app.statsRepository, app.achievementRepository) as T
         }
     }
 }
