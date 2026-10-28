@@ -762,37 +762,15 @@ private fun MiniPlayerPanel(
                             tint = themeText.copy(alpha = 0.7f))
                     }
                 }
-                // ─── Nächster/Vorheriger nur im aktiven Spieler-Panel ─────────
-                if (isCurrentTurn) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxWidth()) {
-                        if (state.canUndo) {
-                            OutlinedButton(
-                                onClick = vm::previousPlayer,
-                                modifier = Modifier.weight(1f).height(btnH),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                            ) {
-                                Icon(Icons.Filled.SkipPrevious, null, Modifier.size(smallFs.value.dp))
-                                Spacer(Modifier.width(2.dp))
-                                Text("Zurück", fontSize = smallFs)
-                            }
-                        }
-                        FilledTonalButton(
-                            onClick = vm::nextPlayer,
-                            modifier = Modifier.weight(if (state.canUndo) 1.5f else 1f).height(btnH),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                        ) {
-                            Icon(Icons.Filled.SkipNext, null, Modifier.size(smallFs.value.dp))
-                            Spacer(Modifier.width(2.dp))
-                            Text("Nächster", fontSize = smallFs)
-                        }
-                    }
-                }
             }
 
-            // ─── Würfel / Randomizer ─────────────────────────────────────────────
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically) {
+            // ─── Würfel / Randomizer, Nächster/Vorheriger rechts daneben ──────────
+            // (eine Zeile statt zwei, sonst wird's im engen 4-Spieler-Raster zu voll)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 IconButton(onClick = { vm.rollDice(p.id) },
                     modifier = Modifier.size(iconSz), enabled = !state.isDiceRolling) {
                     Icon(Icons.Filled.Casino, "Würfel", Modifier.size(iconSz * 0.75f))
@@ -800,6 +778,28 @@ private fun MiniPlayerPanel(
                 IconButton(onClick = { vm.randomizeOpponent(p.id) },
                     modifier = Modifier.size(iconSz), enabled = !state.isRandomizing) {
                     Icon(Icons.Filled.Shuffle, "Zufall", Modifier.size(iconSz * 0.75f))
+                }
+                if (isCurrentTurn) {
+                    Spacer(Modifier.weight(1f))
+                    if (state.canUndo) {
+                        OutlinedButton(
+                            onClick = vm::previousPlayer,
+                            modifier = Modifier.height(btnH),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                        ) {
+                            Icon(Icons.Filled.SkipPrevious, null, Modifier.size(smallFs.value.dp))
+                        }
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    FilledTonalButton(
+                        onClick = vm::nextPlayer,
+                        modifier = Modifier.height(btnH),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Filled.SkipNext, null, Modifier.size(smallFs.value.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("Nächster", fontSize = smallFs)
+                    }
                 }
             }
 
