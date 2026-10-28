@@ -260,6 +260,23 @@ class PreconRepository(private val context: Context) {
         name
     }
 
+    /**
+     * Same lookup, but lets network/parsing exceptions propagate instead of swallowing them
+     * into an empty string. Used by the manual "Decks aktualisieren" diagnostic sync so a real
+     * failure (timeout, TLS, DNS, ...) is distinguishable from "no German print exists" — the
+     * swallowing variant above made every real error look identical to a clean non-result.
+     */
+    suspend fun fetchGermanNameByCommanderNameOrThrow(commanderName: String): String = withContext(Dispatchers.IO) {
+        if (commanderName.isBlank()) return@withContext ""
+        val cacheKey = "de_name_${commanderName.hashCode()}"
+        val cached = prefs.getString(cacheKey, null)
+        if (cached != null) return@withContext cached
+
+        val name = searchGermanPrintedName(commanderName)
+        if (name.isNotBlank()) prefs.edit().putString(cacheKey, name).apply()
+        name
+    }
+
     fun clearCache() {
         prefs.edit().clear().apply()
         // Keep locally downloaded images (expensive to re-download)

@@ -116,7 +116,11 @@ class HomeViewModel(
                     result.updated > 0 -> "${result.updated} Deck(s) aktualisiert" +
                         if (result.errors > 0) " (${result.errors} Fehler)" else ""
                     result.attempted == 0 -> "Alle Decks sind bereits aktuell"
-                    result.errors == result.attempted -> "Aktualisierung fehlgeschlagen – Internetverbindung prüfen"
+                    result.errors == result.attempted ->
+                        "Aktualisierung fehlgeschlagen: ${result.errorSample ?: "Internetverbindung prüfen"}"
+                    result.errors > 0 -> {
+                        "${result.errors}/${result.attempted} Fehler (${result.errorSample}), Rest ohne deutsche Version"
+                    }
                     else -> {
                         val examples = result.failedNames.take(3).joinToString(", ")
                         "${result.attempted} geprüft, keine deutsche Version gefunden (z. B. $examples)"
