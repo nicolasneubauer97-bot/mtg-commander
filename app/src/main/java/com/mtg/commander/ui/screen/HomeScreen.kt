@@ -247,7 +247,7 @@ fun HomeScreen(
     // ─── Deck-Sync-Snackbar ───────────────────────────────────────────────────
     state.syncMessage?.let { message ->
         LaunchedEffect(message) {
-            kotlinx.coroutines.delay(3000)
+            kotlinx.coroutines.delay(6000) // laenger, da die Meldung jetzt Beispielnamen enthalten kann
             vm.clearSyncMessage()
         }
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
