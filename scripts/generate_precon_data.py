@@ -16,8 +16,8 @@ import urllib.parse
 
 MTGJSON_DECKLIST = "https://mtgjson.com/api/v5/DeckList.json"
 MTGJSON_DECK     = "https://mtgjson.com/api/v5/decks/{}.json"
-SCRYFALL_BY_ID   = "https://api.scryfall.com/cards/{}"
 SCRYFALL_FUZZY   = "https://api.scryfall.com/cards/named?fuzzy={}"
+SCRYFALL_SEARCH  = "https://api.scryfall.com/cards/search"
 # Direct CDN URL — bypasses Scryfall API rate-limits on CI runners
 # Format: https://cards.scryfall.io/art_crop/front/{c1}/{c2}/{uuid}.jpg
 SCRYFALL_CDN     = "https://cards.scryfall.io/art_crop/front/{}/{}/{}.jpg"
@@ -50,6 +50,41 @@ def art_crop_from_card(card):
     faces = card.get("card_faces") or []
     if faces:
         return (faces[0].get("image_uris") or {}).get("art_crop", "")
+    return ""
+
+
+def fetch_german_name(commander_name):
+    """Looks up the German printed name via Scryfall search + include_multilingual=true.
+
+    A plain GET /cards/:id?lang=de is NOT supported by Scryfall (it silently
+    ignores the lang param and returns the original print) - that was the bug
+    that left commanderNameDe empty for every single precon deck before this.
+    """
+    if not commander_name:
+        return ""
+
+    def search(exact_name):
+        q = f'!"{exact_name}"'
+        url = f"{SCRYFALL_SEARCH}?q={urllib.parse.quote(q)}&unique=prints&include_multilingual=true"
+        data = get_json(url)
+        for card in (data or {}).get("data", []):
+            if card.get("lang") == "de":
+                printed = card.get("printed_name", "")
+                if printed:
+                    return printed
+        return ""
+
+    de = search(commander_name)
+    if de:
+        return de
+
+    # Exact search found nothing (e.g. slightly different spelling) - resolve the
+    # canonical name via fuzzy search, then retry once with that name.
+    enc = urllib.parse.quote(commander_name)
+    resolved = get_json(SCRYFALL_FUZZY.format(enc))
+    resolved_name = (resolved or {}).get("name", "")
+    if resolved_name and resolved_name.lower() != commander_name.lower():
+        return search(resolved_name)
     return ""
 
 
@@ -140,19 +175,12 @@ def main():
             time.sleep(0.15)
             cdn_url = art_crop_from_card(card)  # returns a direct CDN URL
 
-        # ── German names from Scryfall API ─────────────────────────────────
-        commander_name_de  = ""
-        commander_name_de2 = ""
-        if scryfall_id:
-            de = get_json(f"{SCRYFALL_BY_ID.format(scryfall_id)}?lang=de")
+        # ── German names via Scryfall search (see fetch_german_name) ───────
+        commander_name_de = fetch_german_name(commander_name)
+        time.sleep(0.12)
+        commander_name_de2 = fetch_german_name(commander_name2) if commander_name2 else ""
+        if commander_name2:
             time.sleep(0.12)
-            if de and de.get("lang") == "de":
-                commander_name_de = de.get("printed_name", "")
-        if scryfall_id2:
-            de2 = get_json(f"{SCRYFALL_BY_ID.format(scryfall_id2)}?lang=de")
-            time.sleep(0.12)
-            if de2 and de2.get("lang") == "de":
-                commander_name_de2 = de2.get("printed_name", "")
 
         # ── Download image into assets ─────────────────────────────────────
         art_url = ""
@@ -211,6 +239,7 @@ def main():
 
     bundled  = sum(1 for d in result if d["artUrl"].startswith("file://"))
     cdn_fb   = sum(1 for d in result if d["artUrl"].startswith("http"))
+    has_de   = sum(1 for d in result if d["commanderNameDe"])
     img_size = sum(
         os.path.getsize(os.path.join(ART_DIR, f))
         for f in os.listdir(ART_DIR) if f.endswith(".jpg")
@@ -218,6 +247,7 @@ def main():
 
     print(f"\n=== Done ===")
     print(f"  Decks written  : {len(result)}")
+    print(f"  German names   : {has_de}/{len(result)}")
     print(f"  Images bundled : {bundled}  ({img_size} MB in assets)")
     print(f"  CDN fallback   : {cdn_fb}")
     print(f"  No art         : {no_art}")
