@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mtg.commander.MTGCommanderApp
+import com.mtg.commander.audio.SoundEffects
 import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.GameRepository
 import com.mtg.commander.data.repository.PlayerRepository
@@ -163,6 +164,7 @@ class ActiveGameViewModel(
                             gameRepository.getPlayerCommanderWinCount(winnerState.player.id, it.commanderName)
                         } ?: 0
                         winnerStatsFor = autoVictory
+                        viewModelScope.launch { SoundEffects.playVictory() }
                     }
                 }
 
@@ -455,6 +457,7 @@ class ActiveGameViewModel(
     }
 
     fun eliminatePlayer(victimId: Long, killerId: Long?, isSurrender: Boolean = false) {
+        viewModelScope.launch { SoundEffects.playElimination() }
         viewModelScope.launch {
             // Commit pending life deltas FIRST so damage leading to elimination counts for stats
             val committed = pendingLifeDeltas.toMap()

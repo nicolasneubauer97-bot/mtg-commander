@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,8 +27,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +55,9 @@ import com.mtg.commander.ui.utils.commanderDisplayName
 import com.mtg.commander.ui.viewmodel.ActiveGameUiState
 import com.mtg.commander.ui.viewmodel.ActiveGameViewModel
 import com.mtg.commander.ui.viewmodel.ParticipantUiState
+import kotlin.math.PI
+import kotlin.math.sin
+import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1015,6 +1021,70 @@ private fun VictoryOverlay(
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                 Text("Hauptmenü", color = Color.White.copy(alpha = 0.8f))
+            }
+        }
+
+        ConfettiOverlay(modifier = Modifier.fillMaxSize())
+    }
+}
+
+// ─── Konfetti ────────────────────────────────────────────────────────────────
+
+private data class ConfettiParticle(
+    val x: Float,
+    val startDelay: Float,
+    val fallSpeed: Float,
+    val swayAmplitude: Float,
+    val swayFreq: Float,
+    val particleSize: Float,
+    val rotationSpeed: Float,
+    val color: Color,
+    val isRect: Boolean
+)
+
+@Composable
+private fun ConfettiOverlay(modifier: Modifier = Modifier) {
+    val palette = listOf(MTGGold, Color.White, Color(0xFFD3202A), Color(0xFF3A8FD3), Color(0xFF3FAE62))
+    val particles = remember {
+        List(90) {
+            ConfettiParticle(
+                x = Random.nextFloat(),
+                startDelay = Random.nextFloat() * 0.35f,
+                fallSpeed = 0.7f + Random.nextFloat() * 0.5f,
+                swayAmplitude = 8f + Random.nextFloat() * 18f,
+                swayFreq = 0.8f + Random.nextFloat() * 1.8f,
+                particleSize = 5f + Random.nextFloat() * 6f,
+                rotationSpeed = (Random.nextFloat() - 0.5f) * 540f,
+                color = palette.random(),
+                isRect = Random.nextBoolean()
+            )
+        }
+    }
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(1f, animationSpec = tween(durationMillis = 3200, easing = LinearEasing))
+    }
+    Canvas(modifier = modifier) {
+        val t = progress.value
+        particles.forEach { p ->
+            val localT = ((t - p.startDelay) / (1f - p.startDelay)).coerceIn(0f, 1f)
+            if (t <= p.startDelay) return@forEach
+            val yFrac = -0.1f + localT * p.fallSpeed * 1.3f
+            if (yFrac > 1.15f) return@forEach
+            val sway = sin(localT * p.swayFreq * 2 * PI).toFloat() * p.swayAmplitude
+            val cx = p.x * size.width + sway
+            val cy = yFrac * size.height
+            val alpha = (1f - localT * 0.9f).coerceIn(0f, 1f)
+            rotate(degrees = localT * p.rotationSpeed, pivot = Offset(cx, cy)) {
+                if (p.isRect) {
+                    drawRect(
+                        color = p.color.copy(alpha = alpha),
+                        topLeft = Offset(cx - p.particleSize / 2, cy - p.particleSize / 4),
+                        size = Size(p.particleSize, p.particleSize / 2)
+                    )
+                } else {
+                    drawCircle(color = p.color.copy(alpha = alpha), radius = p.particleSize / 2, center = Offset(cx, cy))
+                }
             }
         }
     }
