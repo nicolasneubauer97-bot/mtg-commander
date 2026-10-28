@@ -21,7 +21,8 @@ private val THRESHOLDS: Map<AchievementId, IntArray> = mapOf(
     AchievementId.NEMESIS to intArrayOf(3, 8, 15, 25),
     AchievementId.DAUERGAST to intArrayOf(5, 15, 30, 50),
     AchievementId.VERWUESTER to intArrayOf(500, 1500, 3500, 7000),
-    AchievementId.ZIELSCHEIBE to intArrayOf(20, 50, 100, 200)
+    AchievementId.ZIELSCHEIBE to intArrayOf(20, 50, 100, 200),
+    AchievementId.UNSTERBLICH to intArrayOf(1, 3, 5, 10)
 )
 
 private fun tierForValue(value: Int, thresholds: IntArray): AchievementTier = when {
@@ -69,11 +70,7 @@ class AchievementRepository(
             progress(AchievementId.LEBENSRETTER, lifeHealed),
             progress(AchievementId.NEMESIS, nemesisMax),
             progress(AchievementId.DAUERGAST, starterCount),
-            AchievementProgress(
-                AchievementId.UNSTERBLICH,
-                if (immortalWins > 0) AchievementTier.PLATINUM else AchievementTier.NONE,
-                immortalWins.coerceAtMost(1), null
-            ),
+            progress(AchievementId.UNSTERBLICH, immortalWins),
             progress(AchievementId.VERWUESTER, totalDamage),
             progress(AchievementId.ZIELSCHEIBE, chosenCount)
         )

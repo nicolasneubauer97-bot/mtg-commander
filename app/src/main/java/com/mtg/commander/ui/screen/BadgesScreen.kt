@@ -150,12 +150,10 @@ private fun AchievementCard(ach: AchievementProgress) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                val progressText = when {
-                    ach.id == AchievementId.UNSTERBLICH ->
-                        if (ach.tier == AchievementTier.PLATINUM) "Erreicht" else "Noch nicht erreicht"
-                    ach.nextThreshold != null -> "${ach.value} / ${ach.nextThreshold}"
-                    else -> "${ach.value} — Maximalstufe erreicht"
-                }
+                val progressText = if (ach.nextThreshold != null)
+                    "${ach.value} / ${ach.nextThreshold}"
+                else
+                    "${ach.value} — Maximalstufe erreicht"
                 Text(
                     progressText,
                     style = MaterialTheme.typography.labelSmall,
