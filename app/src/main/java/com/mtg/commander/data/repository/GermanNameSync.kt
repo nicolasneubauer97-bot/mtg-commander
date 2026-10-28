@@ -3,30 +3,38 @@ package com.mtg.commander.data.repository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
+data class GermanNameSyncResult(
+    val attempted: Int,
+    val updated: Int,
+    val errors: Int
+)
+
 /**
  * Loads the German commander name for every deck that is still missing one
  * (via Scryfall) and persists it. Used both automatically on app start and
  * from a manual "refresh" action, so it must stay side-effect-safe to re-run.
- * Returns the number of decks actually updated.
+ * Reports attempted/updated/errors separately so a silent network failure
+ * doesn't look identical to "nothing needed updating".
  */
 suspend fun syncGermanCommanderNames(
     deckRepository: DeckRepository,
     preconRepository: PreconRepository
-): Int {
+): GermanNameSyncResult {
     var updated = 0
+    var errors = 0
     val decks = deckRepository.getAllDecks().first()
     val missing = decks.filter { it.commanderNameDe.isBlank() && it.commanderName.isNotBlank() }
     missing.forEach { deck ->
         try {
             val de = preconRepository.fetchGermanNameByCommanderName(deck.commanderName)
-            if (de.isNotBlank() && !de.equals(deck.commanderName, ignoreCase = true)) {
+            if (de.isNotBlank()) {
                 deckRepository.updateDeck(deck.copy(commanderNameDe = de))
                 updated++
             }
         } catch (_: Exception) {
-            // Einzelnes Deck ignorieren, mit dem naechsten weitermachen
+            errors++
         }
         delay(150) // Rate-Limit fuer Scryfall
     }
-    return updated
+    return GermanNameSyncResult(attempted = missing.size, updated = updated, errors = errors)
 }

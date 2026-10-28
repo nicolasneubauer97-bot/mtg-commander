@@ -81,6 +81,11 @@ fun ActiveGameScreen(
     val state by vm.uiState.collectAsStateWithLifecycle()
     val isFinished = state.game?.isFinished == true
 
+    // Abgebrochene Partie wurde geloescht — zurueck zum Homescreen
+    LaunchedEffect(state.gameDeleted) {
+        if (state.gameDeleted) onBack()
+    }
+
     // ─── Screen awake ─────────────────────────────────────────────────────────
     val context = LocalContext.current
     DisposableEffect(Unit) {

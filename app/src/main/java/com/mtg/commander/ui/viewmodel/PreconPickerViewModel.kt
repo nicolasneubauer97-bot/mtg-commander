@@ -166,9 +166,14 @@ class PreconPickerViewModel(
                     }
                 }
 
-                // Phase 3: German names for all decks that still need them
+                // Phase 3: German names for all decks that still need them.
+                // Waits for Phase 1 first and re-reads LIVE state — many decks start with a
+                // blank commanderName that Phase 1 only fills in asynchronously, so filtering
+                // the original `list` snapshot here used to skip almost every deck permanently.
                 launch {
-                    list.filter { it.commanderName.isNotBlank() && it.commanderNameDe.isBlank() }
+                    kotlinx.coroutines.delay(800)
+                    _uiState.value.decks
+                        .filter { it.commanderName.isNotBlank() && it.commanderNameDe.isBlank() }
                         .forEach { deck ->
                             // Use scryfallId if available (faster), else fuzzy-search by name
                             val de = if (deck.scryfallId.isNotBlank())

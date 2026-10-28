@@ -183,10 +183,15 @@ class GameRepository(
         if (commanderName.isBlank()) 0
         else participantDao.countWinsForPlayerWithCommander(playerId, commanderName)
 
+    /** Abgebrochene Partien werden komplett geloescht statt nur markiert - sie sollen
+     *  gar nicht erst in der Spielhistorie auftauchen. Kaskadiert ueber Fremdschluessel
+     *  auf Teilnehmer, Kills, Commander-Schaden, Lebensaenderungen usw. */
     suspend fun abandonGame(gameId: Long) {
         val game = gameDao.getGameById(gameId) ?: return
-        gameDao.updateGame(game.copy(status = GameStatus.ABANDONED, endedAt = System.currentTimeMillis()))
+        gameDao.deleteGame(game)
     }
+
+    suspend fun deleteAllAbandonedGames() = gameDao.deleteGamesByStatus(GameStatus.ABANDONED)
 
     // ─── Turn Durations ───────────────────────────────────────────────────────
 

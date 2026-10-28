@@ -62,5 +62,12 @@ class MTGCommanderApp : Application() {
                 // Kein Netzwerk o.ae. - naechster App-Start oder manueller Button versucht es erneut
             }
         }
+        // Einmalige Aufraeumaktion: abgebrochene Partien gab es frueher noch als Status statt
+        // geloescht - entfernt alte Reste, damit sie nicht mehr in der Spielhistorie auftauchen.
+        applicationScope.launch {
+            try {
+                gameRepository.deleteAllAbandonedGames()
+            } catch (_: Exception) {}
+        }
     }
 }

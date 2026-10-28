@@ -111,8 +111,14 @@ class HomeViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSyncingDeckNames = true, syncMessage = null)
             val message = try {
-                val updated = syncGermanCommanderNames(deckRepository, preconRepository)
-                if (updated > 0) "$updated Deck(s) aktualisiert" else "Alle Decks sind bereits aktuell"
+                val result = syncGermanCommanderNames(deckRepository, preconRepository)
+                when {
+                    result.updated > 0 -> "${result.updated} Deck(s) aktualisiert" +
+                        if (result.errors > 0) " (${result.errors} Fehler)" else ""
+                    result.attempted == 0 -> "Alle Decks sind bereits aktuell"
+                    result.errors == result.attempted -> "Aktualisierung fehlgeschlagen – Internetverbindung prüfen"
+                    else -> "${result.attempted} geprüft, keine deutsche Version gefunden"
+                }
             } catch (_: Exception) {
                 "Aktualisierung fehlgeschlagen – Internetverbindung prüfen"
             }

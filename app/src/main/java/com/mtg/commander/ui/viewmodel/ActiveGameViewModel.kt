@@ -44,6 +44,7 @@ data class ActiveGameUiState(
     val currentTurnStartMs: Long = 0L,
     val canUndo: Boolean = false,
     val showAbandonConfirm: Boolean = false,
+    val gameDeleted: Boolean = false,
     // Auto-eliminate: participants already auto-triggered (don't retrigger)
     val autoEliminateTriggered: Set<Long> = emptySet(),
     // Undo elimination
@@ -672,7 +673,9 @@ class ActiveGameViewModel(
     fun abandonGame() {
         viewModelScope.launch {
             gameRepository.abandonGame(gameId)
-            _uiState.value = _uiState.value.copy(showAbandonConfirm = false)
+            // gameDeleted erst NACH dem abgeschlossenen Loeschen setzen, damit die Navigation
+            // nicht die laufende Coroutine abschneidet (ViewModel wird beim Verlassen geleert)
+            _uiState.value = _uiState.value.copy(showAbandonConfirm = false, gameDeleted = true)
         }
     }
 
