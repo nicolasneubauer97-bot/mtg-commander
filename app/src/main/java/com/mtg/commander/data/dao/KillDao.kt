@@ -29,6 +29,16 @@ interface KillDao {
     """)
     suspend fun getDeathCountForPlayerWithStatus(playerId: Long, status: GameStatus): Int
 
+    @Query("""
+        SELECT COUNT(*) FROM kills k
+        INNER JOIN game_participants killerGp ON k.killerParticipantId = killerGp.id
+        INNER JOIN game_participants victimGp ON k.victimParticipantId = victimGp.id
+        INNER JOIN games g ON k.gameId = g.id
+        WHERE killerGp.playerId = :killerPlayerId AND victimGp.playerId = :victimPlayerId
+          AND g.status = 'FINISHED'
+    """)
+    suspend fun countKillsBetweenPlayers(killerPlayerId: Long, victimPlayerId: Long): Int
+
     @Insert
     suspend fun insertKill(kill: KillEntity): Long
 

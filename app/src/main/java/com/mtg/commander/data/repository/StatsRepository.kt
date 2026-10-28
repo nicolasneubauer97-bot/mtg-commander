@@ -8,6 +8,7 @@ import com.mtg.commander.data.dao.LifeChangeEventDao
 import com.mtg.commander.data.dao.RandomOpponentPickDao
 import com.mtg.commander.data.entity.GameStatus
 import com.mtg.commander.domain.model.DeckStats
+import com.mtg.commander.domain.model.HeadToHead
 import com.mtg.commander.domain.model.PlayerStats
 import com.mtg.commander.domain.model.RandomOpponentStat
 
@@ -132,6 +133,26 @@ class StatsRepository(
             result.getOrPut(name) { mutableMapOf() }[agg.value] = agg.rollCount
         }
         return result
+    }
+
+    // ─── Head-to-Head: wie oft haben zwei Spieler zusammen gespielt, wer gewann öfter ──
+    suspend fun getHeadToHead(
+        playerAId: Long, playerAName: String, playerBId: Long, playerBName: String
+    ): HeadToHead {
+        val participantsA = participantDao.getParticipantsForPlayerWithStatus(playerAId, GameStatus.FINISHED)
+        val participantsB = participantDao.getParticipantsForPlayerWithStatus(playerBId, GameStatus.FINISHED)
+        val gameIdsB = participantsB.map { it.gameId }.toSet()
+        val sharedA = participantsA.filter { it.gameId in gameIdsB }
+        val sharedGameIds = sharedA.map { it.gameId }.toSet()
+        val winsA = sharedA.count { it.placement == 1 }
+        val winsB = participantsB.count { it.gameId in sharedGameIds && it.placement == 1 }
+        return HeadToHead(
+            playerAId = playerAId, playerAName = playerAName,
+            playerBId = playerBId, playerBName = playerBName,
+            gamesTogether = sharedGameIds.size, winsA = winsA, winsB = winsB,
+            killsAOnB = killDao.countKillsBetweenPlayers(playerAId, playerBId),
+            killsBOnA = killDao.countKillsBetweenPlayers(playerBId, playerAId)
+        )
     }
 
     // Per-game damage dealt by each active-turn participant to others

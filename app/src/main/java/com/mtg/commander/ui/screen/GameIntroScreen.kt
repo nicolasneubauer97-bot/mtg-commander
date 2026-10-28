@@ -4,8 +4,10 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,7 +30,9 @@ import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.GameRepository
 import com.mtg.commander.data.repository.PlayerRepository
+import com.mtg.commander.data.repository.StatsRepository
 import com.mtg.commander.domain.model.Deck
+import com.mtg.commander.domain.model.HeadToHead
 import com.mtg.commander.domain.model.Player
 import com.mtg.commander.ui.theme.*
 import com.mtg.commander.ui.utils.commanderDisplayName
@@ -51,6 +55,7 @@ data class IntroPlayerInfo(
 
 data class GameIntroUiState(
     val players: List<IntroPlayerInfo> = emptyList(),
+    val headToHeads: List<HeadToHead> = emptyList(),
     val isLoading: Boolean = true
 )
 
@@ -58,7 +63,8 @@ class GameIntroViewModel(
     private val gameId: Long,
     private val gameRepository: GameRepository,
     private val playerRepository: PlayerRepository,
-    private val deckRepository: DeckRepository
+    private val deckRepository: DeckRepository,
+    private val statsRepository: StatsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GameIntroUiState())
@@ -73,7 +79,17 @@ class GameIntroViewModel(
                 val (wins, total) = if (deck != null) gameRepository.getDeckWinStats(deck.id) else Pair(0, 0)
                 IntroPlayerInfo(player = player, deck = deck, wins = wins, totalGames = total)
             }
-            _uiState.value = GameIntroUiState(players = players, isLoading = false)
+
+            val headToHeads = mutableListOf<HeadToHead>()
+            for (i in players.indices) {
+                for (j in i + 1 until players.size) {
+                    val a = players[i].player
+                    val b = players[j].player
+                    headToHeads.add(statsRepository.getHeadToHead(a.id, a.name, b.id, b.name))
+                }
+            }
+
+            _uiState.value = GameIntroUiState(players = players, headToHeads = headToHeads, isLoading = false)
         }
     }
 
@@ -81,7 +97,10 @@ class GameIntroViewModel(
         fun factory(gameId: Long, app: MTGCommanderApp) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                GameIntroViewModel(gameId, app.gameRepository, app.playerRepository, app.deckRepository) as T
+                GameIntroViewModel(
+                    gameId, app.gameRepository, app.playerRepository,
+                    app.deckRepository, app.statsRepository
+                ) as T
         }
     }
 }
@@ -123,7 +142,9 @@ fun GameIntroScreen(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(24.dp),
-                modifier = Modifier.padding(24.dp)
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp)
             ) {
                 // Title
                 AnimatedVisibility(
@@ -157,8 +178,38 @@ fun GameIntroScreen(
                     }
                 }
 
+                // Head-to-Head preview — staggered in right after the last player card
+                if (state.headToHeads.isNotEmpty()) {
+                    val h2hDelay = 200 + state.players.size * 180 + 150
+                    var h2hVisible by remember { mutableStateOf(false) }
+                    LaunchedEffect(revealed) {
+                        if (revealed) {
+                            kotlinx.coroutines.delay(h2hDelay.toLong())
+                            h2hVisible = true
+                        }
+                    }
+                    AnimatedVisibility(
+                        visible = h2hVisible,
+                        enter = fadeIn(tween(500)) + slideInVertically(tween(500)) { 30 }
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Bisherige Bilanz",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MTGOnSurfaceVar,
+                                letterSpacing = 2.sp
+                            )
+                            state.headToHeads.forEach { h2h -> HeadToHeadCard(h2h) }
+                        }
+                    }
+                }
+
                 // Start button
-                val btnDelay = 200 + state.players.size * 180 + 400
+                val btnDelay = 200 + state.players.size * 180 + 400 + if (state.headToHeads.isNotEmpty()) 250 else 0
                 var btnVisible by remember { mutableStateOf(false) }
                 LaunchedEffect(revealed) {
                     if (revealed) {
@@ -278,6 +329,58 @@ private fun IntroPlayerCard(info: IntroPlayerInfo) {
                     color = MTGOnSurfaceVar,
                     textAlign = TextAlign.Center
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeadToHeadCard(h2h: HeadToHead) {
+    Surface(
+        color = MTGSurface,
+        shape = RoundedCornerShape(12.dp),
+        tonalElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    h2h.playerAName, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                    color = MTGOnDark, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Text("vs", fontSize = 11.sp, color = MTGOnSurfaceVar)
+                Text(
+                    h2h.playerBName, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                    color = MTGOnDark, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+            }
+            if (h2h.gamesTogether == 0) {
+                Text(
+                    "Erstes Aufeinandertreffen",
+                    fontSize = 11.sp, color = MTGGold.copy(alpha = 0.8f), textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                Text(
+                    "${h2h.gamesTogether}× zusammen gespielt · Siege ${h2h.playerAName}: ${h2h.winsA} · ${h2h.playerBName}: ${h2h.winsB}",
+                    fontSize = 11.sp, color = MTGOnSurfaceVar, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (h2h.killsAOnB > 0 || h2h.killsBOnA > 0) {
+                    Text(
+                        "⚔ ${h2h.playerAName} → ${h2h.playerBName}: ${h2h.killsAOnB}  ·  ${h2h.playerBName} → ${h2h.playerAName}: ${h2h.killsBOnA}",
+                        fontSize = 10.sp, color = MTGOnSurfaceVar.copy(alpha = 0.8f), textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }
