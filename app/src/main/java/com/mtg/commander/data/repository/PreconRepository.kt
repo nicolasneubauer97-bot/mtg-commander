@@ -172,6 +172,52 @@ class PreconRepository(private val context: Context) {
         result
     }
 
+    /**
+     * Looks up the German printed name for an English card name via Scryfall's search endpoint
+     * with include_multilingual=true (the only way to retrieve a non-English printing — a plain
+     * GET /cards/:id?lang=de is NOT supported by Scryfall and silently returns the original
+     * print, which is why this used to always come back empty).
+     */
+    private fun searchGermanPrintedName(nameQuery: String): String {
+        val exact = runGermanNameSearch(nameQuery)
+        if (exact.isNotBlank()) return exact
+
+        // Exact oracle-name match found nothing (e.g. slightly different spelling) — resolve the
+        // canonical name via fuzzy search, then retry the multilingual search with that name.
+        val resolvedName = try {
+            val enc = java.net.URLEncoder.encode(nameQuery, "UTF-8")
+            val url = URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+            conn.connectTimeout = 6000; conn.readTimeout = 6000
+            if (conn.responseCode == 200)
+                JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
+            else ""
+        } catch (_: Exception) { "" }
+
+        if (resolvedName.isBlank() || resolvedName.equals(nameQuery, ignoreCase = true)) return ""
+        return runGermanNameSearch(resolvedName)
+    }
+
+    private fun runGermanNameSearch(exactName: String): String {
+        val enc = java.net.URLEncoder.encode("!\"$exactName\"", "UTF-8")
+        val url = URL("https://api.scryfall.com/cards/search?q=$enc&unique=prints&include_multilingual=true")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+        conn.connectTimeout = 6000; conn.readTimeout = 6000
+        if (conn.responseCode != 200) return ""
+        val json = JSONObject(conn.inputStream.bufferedReader().readText())
+        val data = json.optJSONArray("data") ?: return ""
+        for (i in 0 until data.length()) {
+            val card = data.getJSONObject(i)
+            if (card.optString("lang") == "de") {
+                val printed = card.optString("printed_name", "")
+                if (printed.isNotBlank()) return printed
+            }
+        }
+        return ""
+    }
+
     suspend fun fetchGermanName(scryfallId: String): String = withContext(Dispatchers.IO) {
         if (scryfallId.isBlank()) return@withContext ""
         val cacheKey = "de_$scryfallId"
@@ -179,15 +225,17 @@ class PreconRepository(private val context: Context) {
         if (cached != null) return@withContext cached
 
         val name = try {
-            val url = URL("https://api.scryfall.com/cards/$scryfallId?lang=de")
+            // Resolve the card's English name first, then search across all printings for a
+            // German one (a card's scryfallId identifies one specific print, not necessarily
+            // one that was ever printed in German itself).
+            val url = URL("https://api.scryfall.com/cards/$scryfallId")
             val conn = url.openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "MTGCommander/1.0")
+            conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
             conn.connectTimeout = 5000; conn.readTimeout = 5000
-            if (conn.responseCode == 200) {
-                val json = JSONObject(conn.inputStream.bufferedReader().readText())
-                // printed_name is the German name; if missing, card has no German printing
-                json.optString("printed_name", "")
-            } else ""
+            val englishName = if (conn.responseCode == 200)
+                JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
+            else ""
+            if (englishName.isNotBlank()) searchGermanPrintedName(englishName) else ""
         } catch (_: Exception) { "" }
 
         if (name.isNotBlank()) prefs.edit().putString(cacheKey, name).apply()
@@ -201,25 +249,10 @@ class PreconRepository(private val context: Context) {
         val cached = prefs.getString(cacheKey, null)
         if (cached != null) return@withContext cached
 
-        // Step 1: fuzzy-search to get the card's Scryfall ID
-        val scryfallId = try {
-            val enc = java.net.URLEncoder.encode(commanderName, "UTF-8")
-            val url = URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
-            conn.connectTimeout = 6000; conn.readTimeout = 6000
-            if (conn.responseCode == 200)
-                JSONObject(conn.inputStream.bufferedReader().readText()).optString("id", "")
-            else ""
+        val name = try {
+            searchGermanPrintedName(commanderName)
         } catch (_: Exception) { "" }
 
-        if (scryfallId.isBlank()) {
-            prefs.edit().putString(cacheKey, "").apply() // cache miss to avoid retrying
-            return@withContext ""
-        }
-
-        // Step 2: fetch German name by scryfallId
-        val name = fetchGermanName(scryfallId)
         if (name.isNotBlank()) prefs.edit().putString(cacheKey, name).apply()
         name
     }
