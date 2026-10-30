@@ -186,41 +186,43 @@ class PreconRepository(private val context: Context) {
      * print, which is why this used to always come back empty).
      */
     private fun searchGermanPrintedName(nameQuery: String): String {
-        val exact = retryOnTimeout { runGermanNameSearch(nameQuery) }
+        val exact = retryOnTransientError { runGermanNameSearch(nameQuery) }
         if (exact.isNotBlank()) return exact
 
         // Exact oracle-name match found nothing (e.g. slightly different spelling) — resolve the
         // canonical name via fuzzy search, then retry the multilingual search with that name.
-        val resolvedName = try {
-            retryOnTimeout {
-                val enc = java.net.URLEncoder.encode(nameQuery, "UTF-8")
-                val url = URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
-                val conn = url.openConnection() as HttpURLConnection
-                try {
-                    conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
-                    conn.connectTimeout = 7000; conn.readTimeout = 5000
-                    if (conn.responseCode == 200)
-                        JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
-                    else ""
-                } finally { conn.disconnect() }
-            }
-        } catch (_: Exception) { "" }
+        // Only a genuine "no such card" (404) is treated as a dead end here — any other non-200
+        // (429 rate limit, 5xx, ...) propagates as a real error instead of silently becoming "".
+        val resolvedName = retryOnTransientError {
+            val enc = java.net.URLEncoder.encode(nameQuery, "UTF-8")
+            val url = URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
+            val conn = url.openConnection() as HttpURLConnection
+            try {
+                conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+                conn.connectTimeout = 7000; conn.readTimeout = 5000
+                when (conn.responseCode) {
+                    200 -> JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
+                    404 -> ""
+                    else -> throw java.io.IOException("Scryfall-Fuzzysuche HTTP ${conn.responseCode}")
+                }
+            } finally { conn.disconnect() }
+        }
 
         if (resolvedName.isBlank() || resolvedName.equals(nameQuery, ignoreCase = true)) return ""
-        return retryOnTimeout { runGermanNameSearch(resolvedName) }
+        return retryOnTransientError { runGermanNameSearch(resolvedName) }
     }
 
     /**
-     * A single slow/dropped request to Scryfall shouldn't permanently fail a deck - retries
-     * once more on SocketTimeoutException before giving up (seen in practice: ~1 in 4 requests
-     * times out on a flaky connection, but succeeds immediately on retry).
+     * A single slow/dropped/rate-limited request to Scryfall shouldn't permanently fail a deck -
+     * retries on IOException (timeouts as well as unexpected HTTP status codes raised by the
+     * callers above) before giving up.
      */
-    private fun <T> retryOnTimeout(attempts: Int = 3, block: () -> T): T {
-        var lastError: java.net.SocketTimeoutException? = null
+    private fun <T> retryOnTransientError(attempts: Int = 3, block: () -> T): T {
+        var lastError: java.io.IOException? = null
         repeat(attempts) { attempt ->
             try {
                 return block()
-            } catch (e: java.net.SocketTimeoutException) {
+            } catch (e: java.io.IOException) {
                 lastError = e
                 if (attempt < attempts - 1) Thread.sleep(400)
             }
@@ -235,7 +237,12 @@ class PreconRepository(private val context: Context) {
         try {
             conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
             conn.connectTimeout = 7000; conn.readTimeout = 5000
-            if (conn.responseCode != 200) return ""
+            // 404 just means "no card matches this exact name" (legitimate - the caller falls
+            // back to a fuzzy resolve). Any other non-200 (429 rate limit, 5xx, ...) is a real
+            // failure and must surface as an error, not get silently misreported as "kein
+            // deutscher Druck vorhanden".
+            if (conn.responseCode == 404) return ""
+            if (conn.responseCode != 200) throw java.io.IOException("Scryfall-Suche HTTP ${conn.responseCode}")
             val json = JSONObject(conn.inputStream.bufferedReader().readText())
             val data = json.optJSONArray("data") ?: return ""
             for (i in 0 until data.length()) {
