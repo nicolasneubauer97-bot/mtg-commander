@@ -21,6 +21,18 @@ class PreconRepository(private val context: Context) {
     private val cacheMaxAgeMs = 7 * 24 * 60 * 60 * 1000L  // 7 Tage
     private val localArtDir: File get() = File(context.filesDir, "precon_art").also { it.mkdirs() }
 
+    // Bundled English->German name table for the known precon commanders, resolved once against
+    // Scryfall at development time (see assets/commander_names_de.json). Checked before any live
+    // network call so known commanders resolve instantly and fully offline; a live Scryfall
+    // lookup only runs for names outside this table (custom/manually entered decks).
+    private val bundledGermanNames: Map<String, String> by lazy {
+        try {
+            val json = context.assets.open("commander_names_de.json").bufferedReader().readText()
+            val type = object : TypeToken<Map<String, String>>() {}.type
+            gson.fromJson<Map<String, String>>(json, type) ?: emptyMap()
+        } catch (_: Exception) { emptyMap() }
+    }
+
     // ─── Public API ──────────────────────────────────────────────────────────
 
     data class DeckListResult(val decks: List<PreconDeck>, val networkFailed: Boolean)
@@ -118,6 +130,7 @@ class PreconRepository(private val context: Context) {
             val conn = url.openConnection() as java.net.HttpURLConnection
             try {
                 conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+                conn.setRequestProperty("Accept", "*/*")
                 conn.connectTimeout = 8000; conn.readTimeout = 8000
                 if (conn.responseCode == 200) {
                     val json = JSONObject(conn.inputStream.bufferedReader().readText())
@@ -145,6 +158,7 @@ class PreconRepository(private val context: Context) {
             val conn = URL(url).openConnection() as HttpURLConnection
             try {
                 conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+                conn.setRequestProperty("Accept", "*/*")
                 conn.connectTimeout = 10000; conn.readTimeout = 15000
                 if (conn.responseCode == 200) {
                     conn.inputStream.use { input ->
@@ -180,36 +194,32 @@ class PreconRepository(private val context: Context) {
     }
 
     /**
-     * Looks up the German printed name for an English card name via Scryfall's search endpoint
-     * with include_multilingual=true (the only way to retrieve a non-English printing — a plain
-     * GET /cards/:id?lang=de is NOT supported by Scryfall and silently returns the original
-     * print, which is why this used to always come back empty).
+     * Resolves [nameQuery] via Scryfall's plain "named" lookup (a dedicated field match, not the
+     * advanced-search query syntax) and then searches all prints by that card's oracle_id. Going
+     * through oracle_id instead of embedding the name in a `!"..."` search-syntax query sidesteps
+     * any need to escape quotes/commas/ampersands in the name — a card name containing a literal
+     * `"` (or anything else that confuses the search parser) previously caused Scryfall to answer
+     * with HTTP 400 for that deck, which looked identical to "no German print exists".
      */
     private fun searchGermanPrintedName(nameQuery: String): String {
-        val exact = retryOnTransientError { runGermanNameSearch(nameQuery) }
-        if (exact.isNotBlank()) return exact
-
-        // Exact oracle-name match found nothing (e.g. slightly different spelling) — resolve the
-        // canonical name via fuzzy search, then retry the multilingual search with that name.
-        // Only a genuine "no such card" (404) is treated as a dead end here — any other non-200
-        // (429 rate limit, 5xx, ...) propagates as a real error instead of silently becoming "".
-        val resolvedName = retryOnTransientError {
+        val oracleId = retryOnTransientError {
             val enc = java.net.URLEncoder.encode(nameQuery, "UTF-8")
             val url = URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
             val conn = url.openConnection() as HttpURLConnection
             try {
                 conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+                conn.setRequestProperty("Accept", "*/*")
                 conn.connectTimeout = 7000; conn.readTimeout = 5000
                 when (conn.responseCode) {
-                    200 -> JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
+                    200 -> JSONObject(conn.inputStream.bufferedReader().readText()).optString("oracle_id", "")
                     404 -> ""
-                    else -> throw java.io.IOException("Scryfall-Fuzzysuche HTTP ${conn.responseCode}")
+                    else -> throw java.io.IOException("Scryfall-Suche HTTP ${conn.responseCode}")
                 }
             } finally { conn.disconnect() }
         }
 
-        if (resolvedName.isBlank() || resolvedName.equals(nameQuery, ignoreCase = true)) return ""
-        return retryOnTransientError { runGermanNameSearch(resolvedName) }
+        if (oracleId.isBlank()) return ""
+        return retryOnTransientError { runGermanNameSearch(oracleId) }
     }
 
     /**
@@ -230,17 +240,18 @@ class PreconRepository(private val context: Context) {
         throw lastError!!
     }
 
-    private fun runGermanNameSearch(exactName: String): String {
-        val enc = java.net.URLEncoder.encode("!\"$exactName\"", "UTF-8")
+    private fun runGermanNameSearch(oracleId: String): String {
+        val enc = java.net.URLEncoder.encode("oracleid:$oracleId", "UTF-8")
         val url = URL("https://api.scryfall.com/cards/search?q=$enc&unique=prints&include_multilingual=true")
         val conn = url.openConnection() as HttpURLConnection
         try {
             conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+            conn.setRequestProperty("Accept", "*/*")
             conn.connectTimeout = 7000; conn.readTimeout = 5000
-            // 404 just means "no card matches this exact name" (legitimate - the caller falls
-            // back to a fuzzy resolve). Any other non-200 (429 rate limit, 5xx, ...) is a real
-            // failure and must surface as an error, not get silently misreported as "kein
-            // deutscher Druck vorhanden".
+            // 404 just means "no prints found for this oracle_id" (shouldn't normally happen once
+            // we have a valid id, but harmless either way). Any other non-200 (429 rate limit,
+            // 5xx, ...) is a real failure and must surface as an error, not get silently
+            // misreported as "kein deutscher Druck vorhanden".
             if (conn.responseCode == 404) return ""
             if (conn.responseCode != 200) throw java.io.IOException("Scryfall-Suche HTTP ${conn.responseCode}")
             val json = JSONObject(conn.inputStream.bufferedReader().readText())
@@ -270,12 +281,16 @@ class PreconRepository(private val context: Context) {
             val conn = url.openConnection() as HttpURLConnection
             val englishName = try {
                 conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+                conn.setRequestProperty("Accept", "*/*")
                 conn.connectTimeout = 5000; conn.readTimeout = 5000
                 if (conn.responseCode == 200)
                     JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
                 else ""
             } finally { conn.disconnect() }
-            if (englishName.isNotBlank()) searchGermanPrintedName(englishName) else ""
+            when {
+                englishName.isBlank() -> ""
+                else -> bundledGermanNames[englishName] ?: searchGermanPrintedName(englishName)
+            }
         } catch (_: Exception) { "" }
 
         if (name.isNotBlank()) prefs.edit().putString(cacheKey, name).apply()
@@ -285,6 +300,7 @@ class PreconRepository(private val context: Context) {
     /** Fetches German name when only the commander name (not scryfallId) is known. */
     suspend fun fetchGermanNameByCommanderName(commanderName: String): String = withContext(Dispatchers.IO) {
         if (commanderName.isBlank()) return@withContext ""
+        bundledGermanNames[commanderName]?.let { return@withContext it }
         val cacheKey = "de_name_${commanderName.hashCode()}"
         val cached = prefs.getString(cacheKey, null)
         if (cached != null) return@withContext cached
@@ -305,6 +321,7 @@ class PreconRepository(private val context: Context) {
      */
     suspend fun fetchGermanNameByCommanderNameOrThrow(commanderName: String): String = withContext(Dispatchers.IO) {
         if (commanderName.isBlank()) return@withContext ""
+        bundledGermanNames[commanderName]?.let { return@withContext it }
         val cacheKey = "de_name_${commanderName.hashCode()}"
         val cached = prefs.getString(cacheKey, null)
         if (cached != null) return@withContext cached
@@ -339,6 +356,7 @@ class PreconRepository(private val context: Context) {
             val conn = url.openConnection() as HttpURLConnection
             try {
                 conn.setRequestProperty("User-Agent", "MTGCommander/1.0")
+                conn.setRequestProperty("Accept", "*/*")
                 conn.connectTimeout = 10000; conn.readTimeout = 10000
                 if (conn.responseCode != 200) return Pair(emptyList(), false)
 
@@ -368,6 +386,7 @@ class PreconRepository(private val context: Context) {
             val conn = url.openConnection() as HttpURLConnection
             try {
                 conn.setRequestProperty("User-Agent", "MTGCommander/1.0")
+                conn.setRequestProperty("Accept", "*/*")
                 conn.connectTimeout = 10000; conn.readTimeout = 15000
                 if (conn.responseCode != 200) return deck
 
