@@ -116,17 +116,19 @@ class PreconRepository(private val context: Context) {
                 java.net.URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
             }
             val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
-            conn.connectTimeout = 8000; conn.readTimeout = 8000
-            if (conn.responseCode == 200) {
-                val json = JSONObject(conn.inputStream.bufferedReader().readText())
-                val imageUris = json.optJSONObject("image_uris")
-                if (imageUris != null) imageUris.optString("art_crop", "")
-                else {
-                    val faces = json.optJSONArray("card_faces")
-                    faces?.optJSONObject(0)?.optJSONObject("image_uris")?.optString("art_crop", "") ?: ""
-                }
-            } else ""
+            try {
+                conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+                conn.connectTimeout = 8000; conn.readTimeout = 8000
+                if (conn.responseCode == 200) {
+                    val json = JSONObject(conn.inputStream.bufferedReader().readText())
+                    val imageUris = json.optJSONObject("image_uris")
+                    if (imageUris != null) imageUris.optString("art_crop", "")
+                    else {
+                        val faces = json.optJSONArray("card_faces")
+                        faces?.optJSONObject(0)?.optJSONObject("image_uris")?.optString("art_crop", "") ?: ""
+                    }
+                } else ""
+            } finally { conn.disconnect() }
         } catch (_: Exception) { "" }
 
         if (cdnUrl.isBlank()) return@withContext ""
@@ -141,14 +143,16 @@ class PreconRepository(private val context: Context) {
         if (url.isBlank() || url.startsWith("file://")) return false
         return try {
             val conn = URL(url).openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
-            conn.connectTimeout = 10000; conn.readTimeout = 15000
-            if (conn.responseCode == 200) {
-                conn.inputStream.use { input ->
-                    dest.outputStream().use { output -> input.copyTo(output) }
-                }
-                true
-            } else false
+            try {
+                conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+                conn.connectTimeout = 10000; conn.readTimeout = 15000
+                if (conn.responseCode == 200) {
+                    conn.inputStream.use { input ->
+                        dest.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    true
+                } else false
+            } finally { conn.disconnect() }
         } catch (_: Exception) { false }
     }
 
@@ -192,11 +196,13 @@ class PreconRepository(private val context: Context) {
                 val enc = java.net.URLEncoder.encode(nameQuery, "UTF-8")
                 val url = URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
                 val conn = url.openConnection() as HttpURLConnection
-                conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
-                conn.connectTimeout = 4000; conn.readTimeout = 4000
-                if (conn.responseCode == 200)
-                    JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
-                else ""
+                try {
+                    conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+                    conn.connectTimeout = 7000; conn.readTimeout = 5000
+                    if (conn.responseCode == 200)
+                        JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
+                    else ""
+                } finally { conn.disconnect() }
             }
         } catch (_: Exception) { "" }
 
@@ -209,14 +215,14 @@ class PreconRepository(private val context: Context) {
      * once more on SocketTimeoutException before giving up (seen in practice: ~1 in 4 requests
      * times out on a flaky connection, but succeeds immediately on retry).
      */
-    private fun <T> retryOnTimeout(attempts: Int = 2, block: () -> T): T {
+    private fun <T> retryOnTimeout(attempts: Int = 3, block: () -> T): T {
         var lastError: java.net.SocketTimeoutException? = null
         repeat(attempts) { attempt ->
             try {
                 return block()
             } catch (e: java.net.SocketTimeoutException) {
                 lastError = e
-                if (attempt < attempts - 1) Thread.sleep(300)
+                if (attempt < attempts - 1) Thread.sleep(400)
             }
         }
         throw lastError!!
@@ -226,19 +232,21 @@ class PreconRepository(private val context: Context) {
         val enc = java.net.URLEncoder.encode("!\"$exactName\"", "UTF-8")
         val url = URL("https://api.scryfall.com/cards/search?q=$enc&unique=prints&include_multilingual=true")
         val conn = url.openConnection() as HttpURLConnection
-        conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
-        conn.connectTimeout = 4000; conn.readTimeout = 4000
-        if (conn.responseCode != 200) return ""
-        val json = JSONObject(conn.inputStream.bufferedReader().readText())
-        val data = json.optJSONArray("data") ?: return ""
-        for (i in 0 until data.length()) {
-            val card = data.getJSONObject(i)
-            if (card.optString("lang") == "de") {
-                val printed = card.optString("printed_name", "")
-                if (printed.isNotBlank()) return printed
+        try {
+            conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+            conn.connectTimeout = 7000; conn.readTimeout = 5000
+            if (conn.responseCode != 200) return ""
+            val json = JSONObject(conn.inputStream.bufferedReader().readText())
+            val data = json.optJSONArray("data") ?: return ""
+            for (i in 0 until data.length()) {
+                val card = data.getJSONObject(i)
+                if (card.optString("lang") == "de") {
+                    val printed = card.optString("printed_name", "")
+                    if (printed.isNotBlank()) return printed
+                }
             }
-        }
-        return ""
+            return ""
+        } finally { conn.disconnect() }
     }
 
     suspend fun fetchGermanName(scryfallId: String): String = withContext(Dispatchers.IO) {
@@ -253,11 +261,13 @@ class PreconRepository(private val context: Context) {
             // one that was ever printed in German itself).
             val url = URL("https://api.scryfall.com/cards/$scryfallId")
             val conn = url.openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
-            conn.connectTimeout = 5000; conn.readTimeout = 5000
-            val englishName = if (conn.responseCode == 200)
-                JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
-            else ""
+            val englishName = try {
+                conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+                conn.connectTimeout = 5000; conn.readTimeout = 5000
+                if (conn.responseCode == 200)
+                    JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
+                else ""
+            } finally { conn.disconnect() }
             if (englishName.isNotBlank()) searchGermanPrintedName(englishName) else ""
         } catch (_: Exception) { "" }
 
@@ -320,26 +330,28 @@ class PreconRepository(private val context: Context) {
         return try {
             val url = URL("https://mtgjson.com/api/v5/DeckList.json")
             val conn = url.openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "MTGCommander/1.0")
-            conn.connectTimeout = 10000; conn.readTimeout = 10000
-            if (conn.responseCode != 200) return Pair(emptyList(), false)
+            try {
+                conn.setRequestProperty("User-Agent", "MTGCommander/1.0")
+                conn.connectTimeout = 10000; conn.readTimeout = 10000
+                if (conn.responseCode != 200) return Pair(emptyList(), false)
 
-            val root = JSONObject(conn.inputStream.bufferedReader().readText())
-            val data = root.getJSONArray("data")
-            val result = mutableListOf<PreconDeck>()
-            for (i in 0 until data.length()) {
-                val item = data.getJSONObject(i)
-                if (item.optString("type") != "Commander Deck") continue
-                val fileName = item.optString("fileName", "")
-                if (fileName.isBlank()) continue
-                if (fileName.contains("Collector", ignoreCase = true)) continue
-                result.add(PreconDeck(
-                    fileName = fileName,
-                    name = item.optString("name", fileName),
-                    setCode = item.optString("code", "")
-                ))
-            }
-            Pair(result, true)
+                val root = JSONObject(conn.inputStream.bufferedReader().readText())
+                val data = root.getJSONArray("data")
+                val result = mutableListOf<PreconDeck>()
+                for (i in 0 until data.length()) {
+                    val item = data.getJSONObject(i)
+                    if (item.optString("type") != "Commander Deck") continue
+                    val fileName = item.optString("fileName", "")
+                    if (fileName.isBlank()) continue
+                    if (fileName.contains("Collector", ignoreCase = true)) continue
+                    result.add(PreconDeck(
+                        fileName = fileName,
+                        name = item.optString("name", fileName),
+                        setCode = item.optString("code", "")
+                    ))
+                }
+                Pair(result, true)
+            } finally { conn.disconnect() }
         } catch (_: Exception) { Pair(emptyList(), false) }
     }
 
@@ -347,23 +359,25 @@ class PreconRepository(private val context: Context) {
         return try {
             val url = URL("https://mtgjson.com/api/v5/decks/${deck.fileName}.json")
             val conn = url.openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "MTGCommander/1.0")
-            conn.connectTimeout = 10000; conn.readTimeout = 15000
-            if (conn.responseCode != 200) return deck
+            try {
+                conn.setRequestProperty("User-Agent", "MTGCommander/1.0")
+                conn.connectTimeout = 10000; conn.readTimeout = 15000
+                if (conn.responseCode != 200) return deck
 
-            val root = JSONObject(conn.inputStream.bufferedReader().readText())
-            val data = root.getJSONObject("data")
-            val commanders = data.optJSONArray("commander")
-            val cmd = commanders?.optJSONObject(0) ?: return deck
+                val root = JSONObject(conn.inputStream.bufferedReader().readText())
+                val data = root.getJSONObject("data")
+                val commanders = data.optJSONArray("commander")
+                val cmd = commanders?.optJSONObject(0) ?: return deck
 
-            val name = cmd.optString("name", "")
-            val scryfallId = cmd.optString("scryfallId", "")
-            val ciArray = cmd.optJSONArray("colorIdentity")
-            val colors = buildString {
-                if (ciArray != null) for (j in 0 until ciArray.length()) append(ciArray.getString(j))
-            }
+                val name = cmd.optString("name", "")
+                val scryfallId = cmd.optString("scryfallId", "")
+                val ciArray = cmd.optJSONArray("colorIdentity")
+                val colors = buildString {
+                    if (ciArray != null) for (j in 0 until ciArray.length()) append(ciArray.getString(j))
+                }
 
-            deck.copy(commanderName = name, scryfallId = scryfallId, colors = colors)
+                deck.copy(commanderName = name, scryfallId = scryfallId, colors = colors)
+            } finally { conn.disconnect() }
         } catch (_: Exception) { deck }
     }
 
