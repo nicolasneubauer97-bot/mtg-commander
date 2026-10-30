@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.mtg.commander.MTGCommanderApp
 import com.mtg.commander.data.repository.DeckRepository
 import com.mtg.commander.data.repository.GameRepository
+import com.mtg.commander.data.repository.PlayerRepository
 import com.mtg.commander.data.repository.PreconRepository
 import com.mtg.commander.data.repository.syncGermanCommanderNames
 import com.mtg.commander.domain.model.Game
@@ -28,13 +29,18 @@ data class HomeUiState(
     val showResetConfirm: Boolean = false,
     val resetDone: Boolean = false,
     val isSyncingDeckNames: Boolean = false,
-    val syncMessage: String? = null
+    val syncMessage: String? = null,
+    val syncProgressCurrent: Int = 0,
+    val syncProgressTotal: Int = 0,
+    val updatedDeckSummaries: List<String> = emptyList(),
+    val showUpdatedDecksDialog: Boolean = false
 )
 
 class HomeViewModel(
     private val gameRepository: GameRepository,
     private val deckRepository: DeckRepository,
-    private val preconRepository: PreconRepository
+    private val preconRepository: PreconRepository,
+    private val playerRepository: PlayerRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -109,9 +115,22 @@ class HomeViewModel(
     fun syncDeckNames() {
         if (_uiState.value.isSyncingDeckNames) return
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isSyncingDeckNames = true, syncMessage = null)
+            _uiState.value = _uiState.value.copy(
+                isSyncingDeckNames = true, syncMessage = null,
+                syncProgressCurrent = 0, syncProgressTotal = 0
+            )
+            var summaries: List<String> = emptyList()
             val message = try {
-                val result = syncGermanCommanderNames(deckRepository, preconRepository)
+                val result = syncGermanCommanderNames(deckRepository, preconRepository) { current, total, _ ->
+                    _uiState.value = _uiState.value.copy(syncProgressCurrent = current, syncProgressTotal = total)
+                }
+                if (result.updated > 0) {
+                    val playerNames = result.updatedDecks.map { it.playerId }.distinct()
+                        .associateWith { playerRepository.getPlayerById(it)?.name ?: "?" }
+                    summaries = result.updatedDecks.map {
+                        "${it.deckName} (${playerNames[it.playerId]}): ${it.commanderName} → ${it.commanderNameDe}"
+                    }
+                }
                 when {
                     result.updated > 0 -> "${result.updated} Deck(s) aktualisiert" +
                         if (result.errors > 0) " (${result.errors} Fehler)" else ""
@@ -129,7 +148,10 @@ class HomeViewModel(
             } catch (_: Exception) {
                 "Aktualisierung fehlgeschlagen – Internetverbindung prüfen"
             }
-            _uiState.value = _uiState.value.copy(isSyncingDeckNames = false, syncMessage = message)
+            _uiState.value = _uiState.value.copy(
+                isSyncingDeckNames = false, syncMessage = message,
+                updatedDeckSummaries = summaries, showUpdatedDecksDialog = summaries.isNotEmpty()
+            )
         }
     }
 
@@ -137,11 +159,18 @@ class HomeViewModel(
         _uiState.value = _uiState.value.copy(syncMessage = null)
     }
 
+    fun dismissUpdatedDecksDialog() {
+        _uiState.value = _uiState.value.copy(showUpdatedDecksDialog = false)
+    }
+
     companion object {
         fun factory(app: MTGCommanderApp) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                HomeViewModel(app.gameRepository, app.deckRepository, app.preconRepository) as T
+                HomeViewModel(
+                    app.gameRepository, app.deckRepository,
+                    app.preconRepository, app.playerRepository
+                ) as T
         }
     }
 }

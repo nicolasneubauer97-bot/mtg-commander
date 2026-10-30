@@ -4,7 +4,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -139,7 +141,11 @@ fun HomeScreen(
                 }
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    if (state.isSyncingDeckNames) "Decks werden aktualisiert…" else "Decks aktualisieren (deutsche Namen)",
+                    if (state.isSyncingDeckNames) {
+                        if (state.syncProgressTotal > 0)
+                            "Prüfe Deck ${state.syncProgressCurrent}/${state.syncProgressTotal}…"
+                        else "Decks werden aktualisiert…"
+                    } else "Decks aktualisieren (deutsche Namen)",
                     fontSize = 13.sp
                 )
             }
@@ -245,7 +251,9 @@ fun HomeScreen(
     }
 
     // ─── Deck-Sync-Snackbar ───────────────────────────────────────────────────
-    state.syncMessage?.let { message ->
+    // Wird unterdrueckt, wenn der Detail-Dialog unten ohnehin schon alles zeigt.
+    if (state.syncMessage != null && !state.showUpdatedDecksDialog) {
+        val message = state.syncMessage!!
         LaunchedEffect(message) {
             kotlinx.coroutines.delay(6000) // laenger, da die Meldung jetzt Beispielnamen enthalten kann
             vm.clearSyncMessage()
@@ -255,6 +263,30 @@ fun HomeScreen(
                 Text(message)
             }
         }
+    }
+
+    // ─── Aktualisierte Decks im Detail ────────────────────────────────────────
+    if (state.showUpdatedDecksDialog) {
+        AlertDialog(
+            onDismissRequest = vm::dismissUpdatedDecksDialog,
+            title = { Text("Deutsche Namen gefunden") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    state.updatedDeckSummaries.forEach { line ->
+                        Text(line, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = vm::dismissUpdatedDecksDialog) { Text("OK") }
+            }
+        )
     }
 }
 

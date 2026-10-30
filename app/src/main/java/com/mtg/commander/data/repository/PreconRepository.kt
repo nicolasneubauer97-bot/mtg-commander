@@ -182,24 +182,44 @@ class PreconRepository(private val context: Context) {
      * print, which is why this used to always come back empty).
      */
     private fun searchGermanPrintedName(nameQuery: String): String {
-        val exact = runGermanNameSearch(nameQuery)
+        val exact = retryOnTimeout { runGermanNameSearch(nameQuery) }
         if (exact.isNotBlank()) return exact
 
         // Exact oracle-name match found nothing (e.g. slightly different spelling) — resolve the
         // canonical name via fuzzy search, then retry the multilingual search with that name.
         val resolvedName = try {
-            val enc = java.net.URLEncoder.encode(nameQuery, "UTF-8")
-            val url = URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
-            conn.connectTimeout = 6000; conn.readTimeout = 6000
-            if (conn.responseCode == 200)
-                JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
-            else ""
+            retryOnTimeout {
+                val enc = java.net.URLEncoder.encode(nameQuery, "UTF-8")
+                val url = URL("https://api.scryfall.com/cards/named?fuzzy=$enc")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
+                conn.connectTimeout = 4000; conn.readTimeout = 4000
+                if (conn.responseCode == 200)
+                    JSONObject(conn.inputStream.bufferedReader().readText()).optString("name", "")
+                else ""
+            }
         } catch (_: Exception) { "" }
 
         if (resolvedName.isBlank() || resolvedName.equals(nameQuery, ignoreCase = true)) return ""
-        return runGermanNameSearch(resolvedName)
+        return retryOnTimeout { runGermanNameSearch(resolvedName) }
+    }
+
+    /**
+     * A single slow/dropped request to Scryfall shouldn't permanently fail a deck - retries
+     * once more on SocketTimeoutException before giving up (seen in practice: ~1 in 4 requests
+     * times out on a flaky connection, but succeeds immediately on retry).
+     */
+    private fun <T> retryOnTimeout(attempts: Int = 2, block: () -> T): T {
+        var lastError: java.net.SocketTimeoutException? = null
+        repeat(attempts) { attempt ->
+            try {
+                return block()
+            } catch (e: java.net.SocketTimeoutException) {
+                lastError = e
+                if (attempt < attempts - 1) Thread.sleep(300)
+            }
+        }
+        throw lastError!!
     }
 
     private fun runGermanNameSearch(exactName: String): String {
@@ -207,7 +227,7 @@ class PreconRepository(private val context: Context) {
         val url = URL("https://api.scryfall.com/cards/search?q=$enc&unique=prints&include_multilingual=true")
         val conn = url.openConnection() as HttpURLConnection
         conn.setRequestProperty("User-Agent", "MTGCommander/1.0 Android")
-        conn.connectTimeout = 6000; conn.readTimeout = 6000
+        conn.connectTimeout = 4000; conn.readTimeout = 4000
         if (conn.responseCode != 200) return ""
         val json = JSONObject(conn.inputStream.bufferedReader().readText())
         val data = json.optJSONArray("data") ?: return ""
